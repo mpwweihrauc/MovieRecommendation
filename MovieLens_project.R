@@ -57,11 +57,6 @@ rm(dl, ratings, movies, test_index, temp, movielens, removed)
 
 # Begin
 
-# We generate training and testing sets
-set.seed(1)
-idx <- createDataPartition(edx$rating, times = 1, p = 0.5, list = FALSE)
-train_set <- edx[idx, ]
-test_set <- edx[-idx, ]
 
 # We write a function that computes the Residual Mean Squared Error ("typical error")
 RMSE <- function(true_ratings, predicted_ratings){
@@ -70,8 +65,8 @@ RMSE <- function(true_ratings, predicted_ratings){
 
 
 # Simplest model: We predict a new rating to be the average rating of all movies, which gives us a baseline error value
-mu <- mean(train_set$rating)
-naive_RMSE <- RMSE(test_set$rating, mu)
+mu <- mean(edx$rating)
+naive_RMSE <- RMSE(edx$rating, mu)
 naive_RMSE
 
 # We generate a table to record our approaches and the error they generate
@@ -80,16 +75,16 @@ rmse_results
 
 # Are different movies rated differently? We compute the average rating b (as in "bias") for a movie i: b_i
 
-movie_avgs <- train_set %>%
+movie_avgs <- edx %>%
   group_by(movieId) %>%
   summarize(b_i = mean(rating - mu))
 
 # We predict movie ratings based on the fact that different movies are rated differently
-predicted_ratings <- mu + train_set %>% 
+predicted_ratings <- mu + edx %>% 
   left_join(movie_avgs, by = 'movieId') %>%
   .$b_i
 
-model_1_RMSE <- RMSE(predicted_ratings, train_set$rating)
+model_1_RMSE <- RMSE(edx$rating, predicted_ratings)
 rmse_results <- bind_rows(rmse_results, data_frame(method = "Movie Effect Model", RMSE = model_1_RMSE))
 rmse_results
 
@@ -97,18 +92,18 @@ rmse_results
 
 # Do different users rate different movies differently? We compute b_u, the user-specific effect
 
-user_avgs <- train_set %>%
+user_avgs <- edx %>%
   left_join(movie_avgs, by = 'movieId') %>%
   group_by(userId) %>%
   summarize(b_u = mean(rating - mu - b_i))
 
-predicted_ratings2 <- train_set %>%
+predicted_ratings2 <- edx %>%
   left_join(movie_avgs, by = 'movieId') %>%
   left_join(user_avgs, by = 'userId') %>%
   mutate(pred = mu + b_i + b_u) %>%
   .$pred
 
-model_2_RMSE <- RMSE(predicted_ratings2, train_set$rating)
+model_2_RMSE <- RMSE(edx$rating, predicted_ratings2)
 rmse_results <- bind_rows(rmse_results, data_frame(method = "Movie + User Effects Model", RMSE = model_2_RMSE))
 rmse_results
 
