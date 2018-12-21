@@ -109,9 +109,31 @@ rmse_results
 
 # We can see that by taking into account both the movie and the user effect, we can further improve our RMSE
 
+# Rounding my predictions
+my_reference <- factor(edx$rating)
+my_prediction <- predicted_ratings2
+my_prediction[my_prediction < 0.5] <- 0.5
+my_prediction[my_prediction > 5] <- 5
 
-# We can use Regularization to improve our predictions
+my_prediction <- round(my_prediction*2)/2
+my_prediction <- factor(my_prediction)
 
+confusionMatrix(my_prediction, my_reference)
+
+
+# We can use Regularization to improve our predictions. We have to realize that our predictions so far have been off due to obscure movies rated by very few users.
+# Our predicted top 10 worst movies by b_i
+movie_avgs %>% left_join(edx, by = 'movieId') %>%
+  arrange(b_i) %>%
+  select(title, b_i) %>%
+  slice(1:10) %>%
+  knitr::kable()
+# Our predicted top 10 best movies by b_i
+movie_avgs %>% left_join(edx, by = 'movieId') %>%
+  arrange(desc(b_i)) %>%
+  select(title, b_i) %>%
+  slice(1:10) %>%
+  knitr::kable()
 
 
 # Adding a new column "date" with proper datetime
