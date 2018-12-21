@@ -79,6 +79,8 @@ movie_avgs <- edx %>%
   group_by(movieId) %>%
   summarize(b_i = mean(rating - mu))
 
+movie_avgs %>% qplot(b_i, geom ="histogram", bins = 10, data = ., color = I("black"))
+
 # We predict movie ratings based on the fact that different movies are rated differently
 predicted_ratings <- mu + edx %>% 
   left_join(movie_avgs, by = 'movieId') %>%
@@ -91,51 +93,69 @@ rmse_results
 # We can see that the RMSE improved when we take into account that different movies are rated differently
 
 # Do different users rate different movies differently? We compute b_u, the user-specific effect
+# We can see that a few uers rate movies generally higher/lower than others, while most fall in-between
+edx %>% 
+  group_by(userId) %>% 
+  summarize(b_u = mean(rating)) %>% 
+  filter(n()>=100) %>%
+  ggplot(aes(b_u)) + 
+  geom_histogram(bins = 30, color = "black")
+
 
 user_avgs <- edx %>%
   left_join(movie_avgs, by = 'movieId') %>%
   group_by(userId) %>%
   summarize(b_u = mean(rating - mu - b_i))
 
-predicted_ratings2 <- edx %>%
+predicted_ratings <- edx %>%
   left_join(movie_avgs, by = 'movieId') %>%
   left_join(user_avgs, by = 'userId') %>%
   mutate(pred = mu + b_i + b_u) %>%
   .$pred
 
-model_2_RMSE <- RMSE(edx$rating, predicted_ratings2)
+model_2_RMSE <- RMSE(edx$rating, predicted_ratings)
 rmse_results <- bind_rows(rmse_results, data_frame(method = "Movie + User Effects Model", RMSE = model_2_RMSE))
 rmse_results
 
 # We can see that by taking into account both the movie and the user effect, we can further improve our RMSE
 
+
+# Matrix factorization. We generate a rating matrix y while removing some less-important entries. We then add row and column names and convert them to residuals.
+train_small <- edx %>% 
+  group_by(movieId) %>%
+  filter(n() >= 50) %>% ungroup() %>% 
+  group_by(userId) %>%
+  filter(n() >= 50) %>% ungroup()
+
+y <- train_small %>% 
+  select(userId, movieId, rating) %>%
+  spread(movieId, rating) %>%
+  as.matrix()
+
+rownames(y)<- y[,1]
+y <- y[,-1]
+
+movie_titles <- edx %>% 
+  select(movieId, title) %>%
+  distinct()
+
+colnames(y) <- with(movie_titles, title[match(colnames(y), movieId)])
+y <- sweep(y, 2, colMeans(y, na.rm=TRUE))
+y <- sweep(y, 1, rowMeans(y, na.rm=TRUE))
+
+
+
+
 # Rounding my predictions
 my_reference <- factor(edx$rating)
-my_prediction <- predicted_ratings2
+my_prediction <- predicted_ratings
 my_prediction[my_prediction < 0.5] <- 0.5
 my_prediction[my_prediction > 5] <- 5
 
+my_prediction <- round(my_prediction, digits = 1)
 my_prediction <- round(my_prediction*2)/2
 my_prediction <- factor(my_prediction)
 
 confusionMatrix(my_prediction, my_reference)
 
 
-# We can use Regularization to improve our predictions. We have to realize that our predictions so far have been off due to obscure movies rated by very few users.
-# Our predicted top 10 worst movies by b_i
-movie_avgs %>% left_join(edx, by = 'movieId') %>%
-  arrange(b_i) %>%
-  select(title, b_i) %>%
-  slice(1:10) %>%
-  knitr::kable()
-# Our predicted top 10 best movies by b_i
-movie_avgs %>% left_join(edx, by = 'movieId') %>%
-  arrange(desc(b_i)) %>%
-  select(title, b_i) %>%
-  slice(1:10) %>%
-  knitr::kable()
-
-
-# Adding a new column "date" with proper datetime
-library(lubridate)
-edx <- mutate(edx, date = as_datetime(timestamp))
