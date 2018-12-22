@@ -82,10 +82,21 @@ RMSE <- function(true_ratings, predicted_ratings){
   sqrt(mean((true_ratings - predicted_ratings)^2))
 }
 
-# Simplest model: We predict a new rating to be the average rating of all movies in our dataset,
+# We split the dataset edx into sets for training and testing our algorithm. About 20% are used for testing.
+set.seed(1)
+test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.2, list = FALSE)
+train_set <- edx[-test_index,]
+test_set <- edx[test_index,]
+
+# We exclude movies and users that are not found in the training set
+test_set <- test_set %>% 
+  semi_join(train_set, by = "movieId") %>%
+  semi_join(train_set, by = "userId")
+
+# Simplest model: We predict a new rating to be the average rating of all movies in our training dataset,
 # which gives us a baseline RMSE. We observe that the mean movie rating is a pretty generous > 3.5.
-mu <- mean(edx$rating)
-baseline_RMSE <- RMSE(edx$rating, mu)
+mu <- mean(train_set$rating)
+baseline_RMSE <- RMSE(test_set$rating, mu)
 baseline_RMSE
 
 # We generate a table to record our approaches and the RMSEs they generate.
@@ -94,7 +105,7 @@ rmse_results
 
 # Are different movies rated differently? We compute the average rating "b" (as in "bias") for a movie "i": b_i
 
-movie_avgs <- edx %>%
+movie_avgs <- train_set %>%
   group_by(movieId) %>%
   summarize(b_i = mean(rating - mu))
 
@@ -106,11 +117,11 @@ movie_avgs %>% qplot(b_i, geom = "histogram", bins = 10, data = ., color = I("bl
 # we predict that it will be rated lower than "mu" by "b_i", the differecnce of the individual movie
 # average from the total average
 
-predicted_ratings <- mu + edx %>% 
+predicted_ratings <- mu + test_set %>% 
   left_join(movie_avgs, by = 'movieId') %>%
   .$b_i
 
-model_1_RMSE <- RMSE(edx$rating, predicted_ratings)
+model_1_RMSE <- RMSE(test_set$rating, predicted_ratings)
 rmse_results <- bind_rows(rmse_results, data_frame(method = "Movie Effect Model", RMSE = model_1_RMSE))
 rmse_results
 
@@ -123,7 +134,7 @@ rmse_results
 
 # Visualization of mean rating by users with over 100 rated movies.
 # Some users are very critical, some are rather generous.
-edx %>% 
+train_set %>% 
   group_by(userId) %>% 
   filter(n()>=100) %>%
   summarize(b_u = mean(rating)) %>% 
@@ -131,44 +142,211 @@ edx %>%
   geom_histogram(bins = 30, color = "black")
 
 # Calculation of the user effect b_u, taking into account b_i
-user_avgs <- edx %>%
+user_avgs <- train_set %>%
   left_join(movie_avgs, by = 'movieId') %>%
   group_by(userId) %>%
   summarize(b_u = mean(rating - mu - b_i))
 
 # We predict ratings taking into account b_i and b_u
-predicted_ratings <- edx %>%
+predicted_ratings <- test_set %>%
   left_join(movie_avgs, by = 'movieId') %>%
   left_join(user_avgs, by = 'userId') %>%
   mutate(pred = mu + b_i + b_u) %>%
   .$pred
 
-model_2_RMSE <- RMSE(edx$rating, predicted_ratings)
+model_2_RMSE <- RMSE(test_set$rating, predicted_ratings)
 rmse_results <- bind_rows(rmse_results, data_frame(method = "Movie + User Effects Model", RMSE = model_2_RMSE))
 rmse_results
 
 # We can see that by taking into account both the movie and the user effect, we can further improve our RMSE
+my_reference <- as.factor(test_set$rating)
+
+my_prediction <- predicted_ratings
+my_prediction[my_prediction <= 0.5] <- 0.5
+my_prediction[my_prediction >= 5] <- 5
+my_prediction <- ceiling(my_prediction/0.5)*0.5
+my_prediction <- as.factor(my_prediction)
+
+confusionMatrix(my_prediction, my_reference)$overall["Accuracy"]
 
 
-# Matrix factorization. We generate a rating matrix y while removing some less-important entries. We then add row and column names and convert them to residuals.
-train_small <- edx %>% 
-  group_by(movieId) %>%
-  filter(n() >= 50) %>% ungroup() %>% 
-  group_by(userId) %>%
-  filter(n() >= 50) %>% ungroup()
+# We can make use of regularization to improve our accuracy. We take a look at where we made mistakes when
+# taking into account only movie to movie variation.
 
-y <- train_small %>% 
+movie_titles <- train_set %>% 
+  select(movieId, title) %>%
+  distinct()
+
+# Top 10 best movies according to our prediction with movie to movie bias b_i
+movie_avgs %>% left_join(movie_titles, by="movieId") %>%
+  arrange(desc(b_i)) %>% 
+  select(title, b_i) %>% 
+  slice(1:10) %>%  
+  knitr::kable()
+
+# Top 10 worst movies according to our prediction with movie to movie bias b_i
+movie_avgs %>% left_join(movie_titles, by="movieId") %>%
+  arrange(b_i) %>% 
+  select(title, b_i) %>% 
+  slice(1:10) %>%  
+  knitr::kable()
+
+# This might be due to an overall low amount of ratings associated with these. We take a look at the amount of ratings.
+train_set %>% count(movieId) %>% 
+  left_join(movie_avgs, by = 'movieId') %>%
+  left_join(movie_titles, by = "movieId") %>%
+  arrange(desc(b_i)) %>% 
+  select(title, b_i, n) %>% 
+  slice(1:10) %>% 
+  knitr::kable()
+
+train_set %>% count(movieId) %>% 
+  left_join(movie_avgs, by = 'movieId') %>%
+  left_join(movie_titles, by = "movieId") %>%
+  arrange(b_i) %>% 
+  select(title, b_i, n) %>% 
+  slice(1:10) %>% 
+  knitr::kable()
+
+
+# Indeed, the best and worst movies mostly have very few ratings, sometimes even just a single one
+# Larger estimates of b_i are likely for movies with very few ratings. We can penalize these by making
+# use of regularization. We determine the Lambda that minimizes RMSE.
+lambdas <- seq(0,10,0.25)
+
+rmses <- sapply(lambdas, function(lambda){ 
+movie_reg_avgs <- train_set %>% 
+  group_by(movieId) %>% 
+  summarize(b_i = sum(rating - mu)/(n()+lambda), n_i = n()) 
+
+# We plot the regularlized estimates against the least squares estimates. Some of the most extreme b_i
+# are shrunk by regularization
+data_frame(original = movie_avgs$b_i, 
+           regularlized = movie_reg_avgs$b_i, 
+           n = movie_reg_avgs$n_i) %>%
+  ggplot(aes(original, regularlized, size=sqrt(n))) + 
+  geom_point(shape=1, alpha=0.5)
+
+# We predict new results with regularization accounted for.
+predicted_ratings <- test_set %>%
+  left_join(movie_reg_avgs, by = 'movieId') %>%
+  left_join(user_avgs, by = 'userId') %>%
+  mutate(pred = mu + b_i + b_u) %>%
+  .$pred
+return(RMSE(test_set$rating, predicted_ratings))
+})
+qplot(lambdas, rmses)  
+lambdas[which.min(rmses)]
+
+# We calculate regularized movie biases b_i with the optimal Lambda determined above
+movie_reg_avgs <- train_set %>% 
+  group_by(movieId) %>% 
+  summarize(b_i = sum(rating - mu)/(n()+lambdas[which.min(rmses)]), n_i = n()) 
+
+# Our new top 10 best and worst movies using regularlized values for b_i
+edx %>%
+  count(movieId) %>% 
+  left_join(movie_reg_avgs, by = 'movieId') %>%
+  left_join(movie_titles, by="movieId") %>%
+  arrange(desc(b_i)) %>% 
+  select(title, b_i, n) %>% 
+  slice(1:10) %>% 
+  knitr::kable()
+
+edx %>%
+  count(movieId) %>% 
+  left_join(movie_reg_avgs, by = 'movieId') %>%
+  left_join(movie_titles, by="movieId") %>%
+  arrange(b_i) %>% 
+  select(title, b_i, n) %>% 
+  slice(1:10) %>% 
+  knitr::kable()
+
+# We predict ratings including our regularized movie bias b_i and the user effect b_u
+predicted_ratings <- test_set %>%
+  left_join(movie_reg_avgs, by = 'movieId') %>%
+  left_join(user_avgs, by = 'userId') %>%
+  mutate(pred = mu + b_i + b_u) %>%
+  .$pred
+
+model_3_rmse <- RMSE(test_set$rating, predicted_ratings)
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(method="Regularized Movie Effect + User Effect Model",  
+                                     RMSE = model_3_rmse ))
+rmse_results %>% knitr::kable()
+
+
+
+# We can apply regularization to the estimated user bias b_u with similar procedure.
+
+lambdas <- seq(0, 10, 0.25)
+rmses <- sapply(lambdas, function(lambda){ 
+user_reg_avgs <- train_set %>% 
+  left_join(movie_reg_avgs, by = 'movieId') %>%
+  group_by(userId) %>% 
+  summarize(b_u = sum(rating - mu - b_i)/(n()+lambda), n_i = n()) 
+
+# We predict new results with regularization accounted for.
+predicted_ratings <- test_set %>%
+  left_join(movie_reg_avgs, by = 'movieId') %>%
+  left_join(user_reg_avgs, by = 'userId') %>%
+  mutate(pred = mu + b_i + b_u) %>%
+  .$pred
+
+return(RMSE(test_set$rating, predicted_ratings))
+})
+qplot(lambdas, rmses)  
+lambdas[which.min(rmses)]
+
+# We apply the determined lambda that minimizes RMSE.
+user_reg_avgs <- train_set %>% 
+  left_join(movie_reg_avgs, by = 'movieId') %>%
+  group_by(userId) %>% 
+  summarize(b_u = sum(rating - mu - b_i)/(n()+lambdas[which.min(rmses)]), n_i = n()) 
+
+# We plot the regularlized estimates against the least squares estimates. Some of the most extreme b_i
+# are shrunk by regularization
+data_frame(original = user_avgs$b_u, 
+           regularlized = user_reg_avgs$b_u, 
+           n = user_reg_avgs$n_i) %>%
+  ggplot(aes(original, regularlized, size=sqrt(n))) + 
+  geom_point(shape=1, alpha=0.5)
+
+# We predict new results with regularization accounted for.
+predicted_ratings <- test_set %>%
+  left_join(movie_reg_avgs, by = 'movieId') %>%
+  left_join(user_reg_avgs, by = 'userId') %>%
+  mutate(pred = mu + b_i + b_u) %>%
+  .$pred
+
+model_4_rmse <- RMSE(test_set$rating, predicted_ratings)
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(method="Regularized Movie Effect + Regularized User Effect Model",  
+                                     RMSE = model_4_rmse ))
+rmse_results %>% knitr::kable()
+
+
+
+
+
+
+
+
+
+# Matrix factorization. We generate a rating matrix y We then add row and column names and convert them to residuals.
+
+rmatrix <- edx %>% 
   select(userId, movieId, rating) %>%
   spread(movieId, rating) %>%
   as.matrix()
 
-rownames(y)<- y[,1]
-y <- y[,-1]
+rownames(rmatrix)<- rmatrix[, 1]
+rmatrix <- rmatrix[, -1]
 
 movie_titles <- edx %>% 
   select(movieId, title) %>%
   distinct()
 
-colnames(y) <- with(movie_titles, title[match(colnames(y), movieId)])
-y <- sweep(y, 2, colMeans(y, na.rm=TRUE))
-y <- sweep(y, 1, rowMeans(y, na.rm=TRUE))
+colnames(rmatrix) <- with(movie_titles, title[match(colnames(rmatrix), movieId)])
+rmatrix <- sweep(rmatrix, 2, colMeans(rmatrix, na.rm=TRUE))
+rmatrix <- sweep(rmatrix, 1, rowMeans(rmatrix, na.rm=TRUE))
