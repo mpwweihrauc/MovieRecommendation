@@ -19,7 +19,7 @@ ratings <- read.table(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ra
 
 movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
 colnames(movies) <- c("movieId", "title", "genres")
-movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(movieId),
+movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(levels(movieId))[movieId],
                                            title = as.character(title),
                                            genres = as.character(genres))
 
@@ -35,8 +35,8 @@ temp <- movielens[test_index,]
 # Make sure userId and movieId in validation set are also in edx set
 
 validation <- temp %>% 
-     semi_join(edx, by = "movieId") %>%
-     semi_join(edx, by = "userId")
+  semi_join(edx, by = "movieId") %>%
+  semi_join(edx, by = "userId")
 
 # Add rows removed from validation set back into edx set
 
@@ -53,6 +53,8 @@ validation <- validation %>% select(-rating)
 write.csv(validation %>% select(userId, movieId) %>% mutate(rating = NA),
           "submission.csv", na = "", row.names=FALSE)
 rm(dl, ratings, movies, test_index, temp, movielens, removed)
+
+
 
 
 # Begin
@@ -141,7 +143,15 @@ train_set %>%
   ggplot(aes(b_u)) + 
   geom_histogram(bins = 30, color = "black")
 
-# Calculation of the user effect b_u, taking into account b_i
+# Some users rate movies more actively than others. A few users actually rated over a thousand movies, while some rated only a few movies.
+train_set %>% 
+  count(userId) %>% 
+  ggplot(aes(n)) + 
+  geom_histogram(bins = 30, color = "black") + 
+  scale_x_log10() + 
+  ggtitle("Users")
+
+# Calculation of the user effect b_u
 user_avgs <- train_set %>%
   left_join(movie_avgs, by = 'movieId') %>%
   group_by(userId) %>%
@@ -155,19 +165,8 @@ predicted_ratings <- test_set %>%
   .$pred
 
 model_2_RMSE <- RMSE(test_set$rating, predicted_ratings)
-rmse_results <- bind_rows(rmse_results, data_frame(method = "Movie + User Effects Model", RMSE = model_2_RMSE))
+rmse_results <- bind_rows(rmse_results, data_frame(method = "Movie & User Effects Model", RMSE = model_2_RMSE))
 rmse_results
-
-# We can see that by taking into account both the movie and the user effect, we can further improve our RMSE
-my_reference <- as.factor(test_set$rating)
-
-my_prediction <- predicted_ratings
-my_prediction[my_prediction <= 0.5] <- 0.5
-my_prediction[my_prediction >= 5] <- 5
-my_prediction <- ceiling(my_prediction/0.5)*0.5
-my_prediction <- as.factor(my_prediction)
-
-confusionMatrix(my_prediction, my_reference)$overall["Accuracy"]
 
 
 # We can make use of regularization to improve our accuracy. We take a look at where we made mistakes when
@@ -178,14 +177,14 @@ movie_titles <- train_set %>%
   distinct()
 
 # Top 10 best movies according to our prediction with movie to movie bias b_i
-movie_avgs %>% left_join(movie_titles, by="movieId") %>%
+movie_avgs %>% left_join(movie_titles, by = "movieId") %>%
   arrange(desc(b_i)) %>% 
   select(title, b_i) %>% 
   slice(1:10) %>%  
   knitr::kable()
 
 # Top 10 worst movies according to our prediction with movie to movie bias b_i
-movie_avgs %>% left_join(movie_titles, by="movieId") %>%
+movie_avgs %>% left_join(movie_titles, by = "movieId") %>%
   arrange(b_i) %>% 
   select(title, b_i) %>% 
   slice(1:10) %>%  
@@ -212,28 +211,19 @@ train_set %>% count(movieId) %>%
 # Indeed, the best and worst movies mostly have very few ratings, sometimes even just a single one
 # Larger estimates of b_i are likely for movies with very few ratings. We can penalize these by making
 # use of regularization. We determine the Lambda that minimizes RMSE.
-lambdas <- seq(0,10,0.25)
-
-rmses <- sapply(lambdas, function(lambda){ 
-movie_reg_avgs <- train_set %>% 
+lambdas <- seq(0, 10, 0.25)
+mu <- mean(train_set$rating)
+just_the_sum <- train_set %>% 
   group_by(movieId) %>% 
-  summarize(b_i = sum(rating - mu)/(n()+lambda), n_i = n()) 
+  summarize(s = sum(rating - mu), n_i = n())
 
-# We plot the regularlized estimates against the least squares estimates. Some of the most extreme b_i
-# are shrunk by regularization
-data_frame(original = movie_avgs$b_i, 
-           regularlized = movie_reg_avgs$b_i, 
-           n = movie_reg_avgs$n_i) %>%
-  ggplot(aes(original, regularlized, size=sqrt(n))) + 
-  geom_point(shape=1, alpha=0.5)
-
-# We predict new results with regularization accounted for.
-predicted_ratings <- test_set %>%
-  left_join(movie_reg_avgs, by = 'movieId') %>%
-  left_join(user_avgs, by = 'userId') %>%
-  mutate(pred = mu + b_i + b_u) %>%
-  .$pred
-return(RMSE(test_set$rating, predicted_ratings))
+rmses <- sapply(lambdas, function(l){
+  predicted_ratings <- test_set %>% 
+    left_join(just_the_sum, by = "movieId") %>% 
+    mutate(b_i = s/(n_i+l)) %>%
+    mutate(pred = mu + b_i) %>%
+    .$pred
+  return(RMSE(test_set$rating, predicted_ratings))
 })
 qplot(lambdas, rmses)  
 lambdas[which.min(rmses)]
@@ -241,92 +231,106 @@ lambdas[which.min(rmses)]
 # We calculate regularized movie biases b_i with the optimal Lambda determined above
 movie_reg_avgs <- train_set %>% 
   group_by(movieId) %>% 
-  summarize(b_i = sum(rating - mu)/(n()+lambdas[which.min(rmses)]), n_i = n()) 
+  summarize(b_i = sum(rating - mu)/(n() + lambdas[which.min(rmses)]), n_i = n()) 
+
+# We plot the regularlized estimates against the least squares estimates. Some of the most extreme b_i
+# are shrunk by regularization.
+data_frame(original = movie_avgs$b_i, 
+           regularlized = movie_reg_avgs$b_i, 
+           n = movie_reg_avgs$n_i) %>%
+  ggplot(aes(original, regularlized, size=sqrt(n))) + 
+  geom_point(shape = 1, alpha = 0.5)
 
 # Our new top 10 best and worst movies using regularlized values for b_i
-edx %>%
+train_set %>%
   count(movieId) %>% 
-  left_join(movie_reg_avgs, by = 'movieId') %>%
-  left_join(movie_titles, by="movieId") %>%
+  left_join(movie_reg_avgs, by = "movieId") %>%
+  left_join(movie_titles, by = "movieId") %>%
   arrange(desc(b_i)) %>% 
   select(title, b_i, n) %>% 
   slice(1:10) %>% 
   knitr::kable()
 
-edx %>%
+train_set %>%
   count(movieId) %>% 
-  left_join(movie_reg_avgs, by = 'movieId') %>%
-  left_join(movie_titles, by="movieId") %>%
+  left_join(movie_reg_avgs, by = "movieId") %>%
+  left_join(movie_titles, by = "movieId") %>%
   arrange(b_i) %>% 
   select(title, b_i, n) %>% 
   slice(1:10) %>% 
   knitr::kable()
 
-# We predict ratings including our regularized movie bias b_i and the user effect b_u
+# We predict ratings with the regularized movie bias b_i
 predicted_ratings <- test_set %>%
-  left_join(movie_reg_avgs, by = 'movieId') %>%
-  left_join(user_avgs, by = 'userId') %>%
-  mutate(pred = mu + b_i + b_u) %>%
+  left_join(movie_reg_avgs, by = "movieId") %>%
+  mutate(pred = mu + b_i) %>%
   .$pred
 
 model_3_rmse <- RMSE(test_set$rating, predicted_ratings)
 rmse_results <- bind_rows(rmse_results,
-                          data_frame(method="Regularized Movie Effect + User Effect Model",  
-                                     RMSE = model_3_rmse ))
+                          data_frame(method = "Regularized Movie Effect",  
+                                     RMSE = model_3_rmse))
 rmse_results %>% knitr::kable()
 
 
 
-# We can apply regularization to the estimated user bias b_u with similar procedure.
-
+# We apply regularization to the estimated user bias b_u
 lambdas <- seq(0, 10, 0.25)
-rmses <- sapply(lambdas, function(lambda){ 
-user_reg_avgs <- train_set %>% 
-  left_join(movie_reg_avgs, by = 'movieId') %>%
-  group_by(userId) %>% 
-  summarize(b_u = sum(rating - mu - b_i)/(n()+lambda), n_i = n()) 
+mu <- mean(train_set$rating)
 
-# We predict new results with regularization accounted for.
-predicted_ratings <- test_set %>%
-  left_join(movie_reg_avgs, by = 'movieId') %>%
-  left_join(user_reg_avgs, by = 'userId') %>%
-  mutate(pred = mu + b_i + b_u) %>%
-  .$pred
-
+rmses <- sapply(lambdas, function(l){
+  
+b_i <- train_set %>% 
+    group_by(movieId) %>%
+    summarize(b_i = sum(rating - mu)/(n()+l))
+  
+b_u <- train_set %>% 
+    left_join(b_i, by = "movieId") %>%
+    group_by(userId) %>%
+    summarize(b_u = sum(rating - b_i - mu)/(n()+l))
+  
+predicted_ratings <- 
+    test_set %>% 
+    left_join(b_i, by = "movieId") %>%
+    left_join(b_u, by = "userId") %>%
+    mutate(pred = mu + b_i + b_u) %>%
+    .$pred
+  
 return(RMSE(test_set$rating, predicted_ratings))
 })
-qplot(lambdas, rmses)  
+qplot(lambdas, rmses)
 lambdas[which.min(rmses)]
 
-# We apply the determined lambda that minimizes RMSE.
 user_reg_avgs <- train_set %>% 
-  left_join(movie_reg_avgs, by = 'movieId') %>%
+  left_join(movie_reg_avgs, by = "movieId") %>%
   group_by(userId) %>% 
-  summarize(b_u = sum(rating - mu - b_i)/(n()+lambdas[which.min(rmses)]), n_i = n()) 
-
-# We plot the regularlized estimates against the least squares estimates. Some of the most extreme b_i
-# are shrunk by regularization
-data_frame(original = user_avgs$b_u, 
-           regularlized = user_reg_avgs$b_u, 
-           n = user_reg_avgs$n_i) %>%
-  ggplot(aes(original, regularlized, size=sqrt(n))) + 
-  geom_point(shape=1, alpha=0.5)
+  summarize(b_u = sum(rating - b_i - mu)/(n()+lambdas[which.min(rmses)]), n_i = n()) 
 
 # We predict new results with regularization accounted for.
 predicted_ratings <- test_set %>%
-  left_join(movie_reg_avgs, by = 'movieId') %>%
-  left_join(user_reg_avgs, by = 'userId') %>%
+  left_join(movie_reg_avgs, by = "movieId") %>%
+  left_join(user_reg_avgs, by = "userId") %>%
   mutate(pred = mu + b_i + b_u) %>%
   .$pred
 
 model_4_rmse <- RMSE(test_set$rating, predicted_ratings)
 rmse_results <- bind_rows(rmse_results,
-                          data_frame(method="Regularized Movie Effect + Regularized User Effect Model",  
-                                     RMSE = model_4_rmse ))
+                          data_frame(method = "Regularized Movie & User Effect",  
+                                     RMSE = model_4_rmse))
 rmse_results %>% knitr::kable()
 
 
+# Accuracy
 
+my_reference <- as.factor(test_set$rating)
+
+my_prediction <- predicted_ratings
+my_prediction[my_prediction <= 0.5] <- 0.5
+my_prediction[my_prediction >= 5] <- 5
+my_prediction <- ceiling(my_prediction/0.5)*0.5
+my_prediction <- as.factor(my_prediction)
+
+confusionMatrix(my_prediction, my_reference)$overall["Accuracy"]
 
 
 
