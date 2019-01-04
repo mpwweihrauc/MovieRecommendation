@@ -204,6 +204,35 @@ edx %>% count(movieId) %>%
 # use of regularization. We determine the Lambda that minimizes RMSE. This shrinks the b_i and b_u in case of small number of ratings.
 # Essentially, by shrinking our estimates when we are rather unsure, we are being more conservative in our estimations.
 
+install.packages("vtreat")
+library(vtreat)
+
+test_index <- createDataPartition(edx$rating, times = 1, p = 0.2, list = FALSE)
+test_set <- edx[test_index, ]
+train_set <- edx[-test_index, ]
+
+# Generate k splits for cross-validation.
+splitPlan <- kWayCrossValidation(nRows = nrow(train_set), nSplits = 3, NULL, NULL)
+splitPlan[[1]]
+
+split <- splitPlan[[1]]
+
+rmses <- sapply(lambdas, function(lambda){
+b_i <- train_set[split$train, ] %>% 
+  group_by(movieId) %>%
+  summarize(b_i = sum(rating - mu)/(n() + lambda), n_i = n())
+
+predicted_ratings <- test_set[split$app, ] %>%
+  left_join(b_i, by = "movieId") %>%
+  mutate(pred = mu + b_i) %>%
+  .$pred
+
+return(RMSE( predicted_ratings, test_set$rating))
+})
+
+
+
+
 lambdas <- seq(0, 5, 1)
 
 min_rmses <- replicate(5, {
