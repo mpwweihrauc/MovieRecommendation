@@ -80,15 +80,15 @@ edx %>%
 
 # We write a loss-function that computes the Residual Mean Squared Error ("typical error") as
 # our measure of accuracy. The value is the typical error in star rating we would make
-RMSE <- function(true_ratings, predicted_ratings){
-  sqrt(mean((true_ratings - predicted_ratings)^2))
+RMSE <- function(predicted_ratings, true_ratings){
+  sqrt(mean((predicted_ratings - true_ratings)^2))
 }
 
 
 # Simplest model: We predict a new rating to be the average rating of all movies in our training dataset,
 # which gives us a baseline RMSE. We observe that the mean movie rating is a pretty generous > 3.5.
 mu <- mean(edx$rating)
-baseline_RMSE <- RMSE(edx$rating, mu)
+baseline_RMSE <- RMSE(mu, edx$rating)
 baseline_RMSE
 
 # We generate a table to record our approaches and the RMSEs they generate.
@@ -114,7 +114,7 @@ predicted_ratings <- edx %>%
   mutate(pred = mu + b_i) %>%
   .$pred
 
-model_1_RMSE <- RMSE(edx$rating, predicted_ratings)
+model_1_RMSE <- RMSE(predicted_ratings, edx$rating)
 rmse_results <- bind_rows(rmse_results, data_frame(method = "Movie Effect Model", RMSE = model_1_RMSE))
 rmse_results
 
@@ -155,7 +155,7 @@ predicted_ratings <- edx %>%
   mutate(pred = mu + b_i + b_u) %>%
   .$pred
 
-model_2_RMSE <- RMSE(edx$rating, predicted_ratings)
+model_2_RMSE <- RMSE(predicted_ratings, edx$rating)
 rmse_results <- bind_rows(rmse_results, data_frame(method = "Combined Movie & User Effects Model", RMSE = model_2_RMSE))
 rmse_results
 
@@ -204,9 +204,9 @@ edx %>% count(movieId) %>%
 # use of regularization. We determine the Lambda that minimizes RMSE. This shrinks the b_i and b_u in case of small number of ratings.
 # Essentially, by shrinking our estimates when we are rather unsure, we are being more conservative in our estimations.
 
-lambdas <- seq(0, 10, 1)
+lambdas <- seq(0, 5, 1)
 
-min_rmses <- replicate(10, {
+min_rmses <- replicate(5, {
 test_index <- createDataPartition(edx$rating, times = 1, p = 0.2, list = FALSE)
 test_set <- edx[test_index, ]
 train_set <- edx[-test_index, ]
@@ -229,7 +229,7 @@ predicted_ratings <- test_set %>%
     mutate(pred = mu + b_i) %>%
     .$pred
 
-return(RMSE(test_set$rating, predicted_ratings))
+return(RMSE( predicted_ratings, test_set$rating))
 })
 lambdas[which.min(rmses)]
 })
@@ -255,7 +255,7 @@ predicted_ratings <- edx %>%
   mutate(pred = mu + b_i + b_u) %>%
   .$pred
 
-model_3_rmse <- RMSE(edx$rating, predicted_ratings)
+model_3_rmse <- RMSE(predicted_ratings, edx$rating)
 rmse_results <- bind_rows(rmse_results,
                           data_frame(method = "Regularized Movie & User & Genre Effect",  
                                      RMSE = model_3_rmse))
@@ -297,7 +297,7 @@ predicted_ratings <- edx %>%
   mutate(pred = mu + b_i) %>%
   .$pred
 
-model_3_rmse <- RMSE(edx$rating, predicted_ratings)
+model_3_rmse <- RMSE(predicted_ratings, edx$rating)
 rmse_results <- bind_rows(rmse_results,
                           data_frame(method = "Regularized Movie Effect",  
                                      RMSE = model_3_rmse))
@@ -334,7 +334,7 @@ predicted_ratings <- test_set %>%
     mutate(pred = mu + b_i + b_u) %>%
     .$pred
   
-return(RMSE(test_set$rating, predicted_ratings))
+return(RMSE(predicted_ratings, test_set$rating))
 })
 lambdas[which.min(rmses)]
 })
@@ -353,7 +353,7 @@ predicted_ratings <- edx %>%
   mutate(pred = mu + b_i + b_u) %>%
   .$pred
 
-model_4_rmse <- RMSE(edx$rating, predicted_ratings)
+model_4_rmse <- RMSE(predicted_ratings, edx$rating)
 rmse_results <- bind_rows(rmse_results,
                           data_frame(method = "Regularized Movie & User Effect",  
                                      RMSE = model_4_rmse))
@@ -389,7 +389,7 @@ predicted_ratings <- edx %>%
   mutate(pred = mu + b_i + b_u + b_g) %>%
   .$pred
 
-model_5_rmse <- RMSE(edx$rating, predicted_ratings)
+model_5_rmse <- RMSE(predicted_ratings, edx$rating)
 rmse_results <- bind_rows(rmse_results,
                           data_frame(method = "Regularized Movie & User Effect + Genre Effect",  
                                      RMSE = model_5_rmse))
