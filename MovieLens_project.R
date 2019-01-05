@@ -204,36 +204,101 @@ edx %>% count(movieId) %>%
 # use of regularization. We determine the Lambda that minimizes RMSE. This shrinks the b_i and b_u in case of small number of ratings.
 # Essentially, by shrinking our estimates when we are rather unsure, we are being more conservative in our estimations.
 
-install.packages("vtreat")
-library(vtreat)
-
-test_index <- createDataPartition(edx$rating, times = 1, p = 0.2, list = FALSE)
-test_set <- edx[test_index, ]
-train_set <- edx[-test_index, ]
 
 # Generate k splits for cross-validation.
-splitPlan <- kWayCrossValidation(nRows = nrow(train_set), nSplits = 3, NULL, NULL)
+install.packages("vtreat")
+library(vtreat)
+splitPlan <- kWayCrossValidation(nRows = nrow(edx), nSplits = 5, NULL, NULL)
 splitPlan[[1]]
 
 split <- splitPlan[[1]]
+lambdas <- seq(1.5, 3, 0.25)
+mu <- mean(edx$rating)
 
+opt_lambda <- c(1,2,3) # Empty vector that takes the output of the for-loop below
+
+for (i in 1:5){
+split <- splitPlan[[i]]
 rmses <- sapply(lambdas, function(lambda){
-b_i <- train_set[split$train, ] %>% 
+b_i <- edx[split$train, ] %>% 
   group_by(movieId) %>%
   summarize(b_i = sum(rating - mu)/(n() + lambda), n_i = n())
 
-predicted_ratings <- test_set[split$app, ] %>%
+test_set <- edx[split$app, ] %>%
+  semi_join(edx[split$train, ], by = "movieId") %>%
+  semi_join(edx[split$train, ], by = "userId")
+
+predicted_ratings <- test_set %>%
   left_join(b_i, by = "movieId") %>%
   mutate(pred = mu + b_i) %>%
   .$pred
 
-return(RMSE( predicted_ratings, test_set$rating))
+return(RMSE(predicted_ratings, test_set$rating))
 })
 
+opt_lambda[i] <- lambdas[which.min(rmses)]
+
+}
+opt_lambda
+mean(opt_lambda)
+
+
+# 2nd
+
+split <- splitPlan[[2]]
+lambdas <- seq(1.5, 3.5, 0.25)
+mu <- mean(edx$rating)
+
+rmses <- sapply(lambdas, function(lambda){
+  b_i <- edx[split$train, ] %>% 
+    group_by(movieId) %>%
+    summarize(b_i = sum(rating - mu)/(n() + lambda), n_i = n())
+  
+  test_set <- edx[split$app, ] %>%
+    semi_join(edx[split$train, ], by = "movieId") %>%
+    semi_join(edx[split$train, ], by = "userId")
+  
+  predicted_ratings <- test_set %>%
+    left_join(b_i, by = "movieId") %>%
+    mutate(pred = mu + b_i) %>%
+    .$pred
+  
+  return(RMSE(predicted_ratings, test_set$rating))
+})
+cross2 <- lambdas[which.min(rmses)]
+
+# 3rd
+
+split <- splitPlan[[3]]
+lambdas <- seq(1.5, 3.5, 0.25)
+mu <- mean(edx$rating)
+
+rmses <- sapply(lambdas, function(lambda){
+  b_i <- edx[split$train, ] %>% 
+    group_by(movieId) %>%
+    summarize(b_i = sum(rating - mu)/(n() + lambda), n_i = n())
+  
+  test_set <- edx[split$app, ] %>%
+    semi_join(edx[split$train, ], by = "movieId") %>%
+    semi_join(edx[split$train, ], by = "userId")
+  
+  predicted_ratings <- test_set %>%
+    left_join(b_i, by = "movieId") %>%
+    mutate(pred = mu + b_i) %>%
+    .$pred
+  
+  return(RMSE(predicted_ratings, test_set$rating))
+})
+cross3 <- lambdas[which.min(rmses)]
+
+# Final value of Lambda
+mean(c(cross1, cross2, cross3))
 
 
 
-lambdas <- seq(0, 5, 1)
+
+
+lambdas <- seq(1.5, 3.5, 1)
 
 min_rmses <- replicate(5, {
 test_index <- createDataPartition(edx$rating, times = 1, p = 0.2, list = FALSE)
