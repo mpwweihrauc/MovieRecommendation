@@ -83,11 +83,28 @@ RMSE <- function(predicted_ratings, true_ratings){
   sqrt(mean((predicted_ratings - true_ratings)^2))
 }
 
+# We split our dataset into a training and a testing set. We also make sure not to include movieIds or userIds in the test set, which are not in the training set.
+set.seed(1)
+test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
+train <- edx[-test_index,]
+test <- edx[test_index,]
 
-# Simplest model: We predict a new rating to be the average rating of all movies in our training dataset,
+# Make sure userId and movieId in test set are also in train set
+
+test_set <- test %>% 
+  semi_join(train, by = "movieId") %>%
+  semi_join(train, by = "userId")
+
+# Add rows removed from test_set set back into train set
+
+removed <- anti_join(test, test_set)
+train_set <- rbind(train, removed)
+
+
+# Simplest model: We predict a new rating to be the average rating of all movies in our train_seting dataset,
 # which gives us a baseline RMSE. We observe that the mean movie rating is a pretty generous > 3.5.
-mu <- mean(edx$rating)
-baseline_RMSE <- RMSE(mu, edx$rating)
+mu <- mean(train_set$rating)
+baseline_RMSE <- RMSE(mu, train_set$rating)
 baseline_RMSE
 
 # We generate a table to record our approaches and the RMSEs they generate.
@@ -96,7 +113,7 @@ rmse_results
 
 # Are different movies rated differently? We compute the average rating "b" (as in "bias") for a movie "i": b_i
 
-movie_avgs <- edx %>%
+movie_avgs <- train_set %>%
   group_by(movieId) %>%
   summarize(b_i = mean(rating - mu))
 
@@ -108,12 +125,12 @@ movie_avgs %>% qplot(b_i, geom = "histogram", bins = 10, data = ., color = I("bl
 # we predict that it will be rated lower than "mu" by "b_i", the differecnce of the individual movie
 # average from the total average
 
-predicted_ratings <- edx %>% 
+predicted_ratings <- test %>% 
   left_join(movie_avgs, by = "movieId") %>%
   mutate(pred = mu + b_i) %>%
   .$pred
 
-model_1_RMSE <- RMSE(predicted_ratings, edx$rating)
+model_1_RMSE <- RMSE(predicted_ratings, test$rating)
 rmse_results <- bind_rows(rmse_results, data_frame(method = "Movie Effect Model", RMSE = model_1_RMSE))
 rmse_results
 
@@ -126,7 +143,7 @@ rmse_results
 
 # Visualization of mean rating by users with over 100 rated movies.
 # Some users are very critical, some are rather generous.
-edx %>% 
+train_set %>% 
   group_by(userId) %>% 
   filter(n()>=100) %>%
   summarize(b_u = mean(rating)) %>% 
@@ -134,7 +151,7 @@ edx %>%
   geom_histogram(bins = 30, color = "black")
 
 # Some users rate movies more actively than others. A few users actually rated over a thousand movies, while some rated only a few movies.
-edx %>% 
+train_set %>% 
   count(userId) %>% 
   ggplot(aes(n)) + 
   geom_histogram(bins = 30, color = "black") + 
@@ -142,19 +159,19 @@ edx %>%
   ggtitle("Users")
 
 # Calculation of the user effect b_u.
-user_avgs <- edx %>%
-  left_join(movie_avgs, by = 'movieId') %>%
+user_avgs <- train_set %>%
+  left_join(movie_avgs, by = "movieId") %>%
   group_by(userId) %>%
   summarize(b_u = mean(rating - mu - b_i))
 
 # We predict ratings taking into account b_i and b_u.
-predicted_ratings <- edx %>%
+predicted_ratings <- test %>%
   left_join(movie_avgs, by = "movieId") %>%
   left_join(user_avgs, by = "userId") %>%
   mutate(pred = mu + b_i + b_u) %>%
   .$pred
 
-model_2_RMSE <- RMSE(predicted_ratings, edx$rating)
+model_2_RMSE <- RMSE(predicted_ratings, test$rating)
 rmse_results <- bind_rows(rmse_results, data_frame(method = "Combined Movie & User Effects Model", RMSE = model_2_RMSE))
 rmse_results
 
@@ -162,7 +179,7 @@ rmse_results
 # We can make use of regularization to improve our accuracy. We take a look at where we made mistakes when
 # taking into account only movie to movie variation.
 
-movie_titles <- edx %>% 
+movie_titles <- train_set %>% 
   select(movieId, title) %>%
   distinct()
 
@@ -182,7 +199,7 @@ movie_avgs %>% left_join(movie_titles, by = "movieId") %>%
 
 # This might be due to an overall low amount of ratings associated with these movies.
 # We take a look at the amount of ratings.
-edx %>% count(movieId) %>% 
+train_set %>% count(movieId) %>% 
   left_join(movie_avgs, by = 'movieId') %>%
   left_join(movie_titles, by = "movieId") %>%
   arrange(desc(b_i)) %>% 
@@ -190,7 +207,7 @@ edx %>% count(movieId) %>%
   slice(1:10) %>% 
   knitr::kable()
 
-edx %>% count(movieId) %>% 
+train_set %>% count(movieId) %>% 
   left_join(movie_avgs, by = 'movieId') %>%
   left_join(movie_titles, by = "movieId") %>%
   arrange(b_i) %>% 
@@ -209,22 +226,22 @@ edx %>% count(movieId) %>%
 if(!require(vtreat)) install.packages("vtreat", repos = "http://cran.us.r-project.org")
 
 set.seed(1)
-splitPlan <- kWayCrossValidation(nRows = nrow(edx), nSplits = 4, NULL, NULL)
+splitPlan <- kWayCrossValidation(nRows = nrow(train_set), nSplits = 3, NULL, NULL)
 # splitPlan[[1]] # Looking at the structure of the first split
 
-lambdas <- seq(1, 4, 0.25)
-opt_lambda <- c(1:4) # Empty vector that takes the output of the for-loop below
+lambdas <- seq(1.5, 3, 0.25)
+opt_lambda <- c(1:3) # Empty vector that takes the output of the for-loop below
 
-for (i in 1:4){
+for (i in 1:3){
 split <- splitPlan[[i]]
 rmses <- sapply(lambdas, function(lambda){
-b_i <- edx[split$train, ] %>% 
+b_i <- train_set[split$train, ] %>% 
   group_by(movieId) %>%
   summarize(b_i = sum(rating - mu)/(n() + lambda), n_i = n())
 
-test_set <- edx[split$app, ] %>%
-  semi_join(edx[split$train, ], by = "movieId") %>%
-  semi_join(edx[split$train, ], by = "userId")
+test_set <- train_set[split$app, ] %>%
+  semi_join(train_set[split$train, ], by = "movieId") %>%
+  semi_join(train_set[split$train, ], by = "userId")
 
 predicted_ratings <- test_set %>%
   left_join(b_i, by = "movieId") %>%
@@ -242,7 +259,7 @@ b_i_opt_lambda <- mean(opt_lambda)
 
 # We calculate the regularized movie effect b_i
 
-movie_reg_avgs <- edx %>% 
+movie_reg_avgs <- train_set %>% 
   group_by(movieId) %>% 
   summarize(b_i = sum(rating - mu)/(n() + b_i_opt_lambda), n_i = n()) 
 
@@ -251,32 +268,32 @@ movie_reg_avgs <- edx %>%
 # Regularization for the user effect b_u
 # NOTE: This code likely runs for several minutes, please be patient.
 set.seed(1)
-splitPlan <- kWayCrossValidation(nRows = nrow(edx), nSplits = 4, NULL, NULL)
+splitPlan <- kWayCrossValidation(nRows = nrow(train_set), nSplits = 4, NULL, NULL)
 # splitPlan[[1]] # Looking at the structure of the first split
 
-lambdas <- seq(4, 6, 0.25)
+lambdas <- seq(4, 6, 0.5)
 opt_lambda <- c(1:4) # Empty vector that takes the output of the for-loop below
 
 for (i in 1:4){
   split <- splitPlan[[i]]
   rmses <- sapply(lambdas, function(lambda){
     
-    b_u <- edx[split$train, ] %>% 
+    b_u <- train_set[split$train, ] %>% 
       left_join(movie_reg_avgs, by = "movieId") %>%
       group_by(userId) %>%
       summarize(b_u = sum(rating - b_i - mu)/(n() + lambda), n_i = n())
     
-    test_set <- edx[split$app, ] %>%
-      semi_join(edx[split$train, ], by = "movieId") %>%
-      semi_join(edx[split$train, ], by = "userId")
+    test_temp <- train_set[split$app, ] %>%
+      semi_join(train_set[split$train, ], by = "movieId") %>%
+      semi_join(train_set[split$train, ], by = "userId")
     
-    predicted_ratings <- test_set %>%
+    predicted_ratings <- test_temp %>%
       left_join(movie_reg_avgs, by = "movieId") %>%
       left_join(b_u, by = "userId") %>%
       mutate(pred = mu + b_i + b_u) %>%
       .$pred
     
-    return(RMSE(predicted_ratings, test_set$rating))
+    return(RMSE(predicted_ratings, test_temp$rating))
   })
   
   opt_lambda[i] <- lambdas[which.min(rmses)]
@@ -286,7 +303,7 @@ opt_lambda
 b_u_opt_lambda <- mean(opt_lambda)
 
 # We calculate regularized user effect b_u utilizing the optimized Lambda value (~ 5)
-user_reg_avgs <- edx %>% 
+user_reg_avgs <- train_set %>% 
   left_join(movie_reg_avgs, by = "movieId") %>%
   group_by(userId) %>% 
   summarize(b_u = sum(rating - b_i - mu)/(n() + b_u_opt_lambda), n_i = n()) 
@@ -301,7 +318,7 @@ data_frame(original = movie_avgs$b_i,
   geom_point(shape = 1, alpha = 0.5)
 
 # Our new top 10 best and worst movies using regularized values for b_i
-edx %>%
+train_set %>%
   count(movieId) %>% 
   left_join(movie_reg_avgs, by = "movieId") %>%
   left_join(movie_titles, by = "movieId") %>%
@@ -310,7 +327,7 @@ edx %>%
   slice(1:10) %>% 
   knitr::kable()
 
-edx %>%
+train_set %>%
   count(movieId) %>% 
   left_join(movie_reg_avgs, by = "movieId") %>%
   left_join(movie_titles, by = "movieId") %>%
@@ -323,16 +340,16 @@ edx %>%
 
 # We predict ratings based on regularized b_i and b_u
 
-predicted_ratings <- edx %>%
+predicted_ratings <- test_set %>%
   left_join(movie_reg_avgs, by = "movieId") %>%
   left_join(user_reg_avgs, by = "userId") %>%
   mutate(pred = mu + b_i + b_u) %>%
   .$pred
 
-model_3_RMSE <- RMSE(predicted_ratings, edx$rating)
+model_3_RMSE <- RMSE(predicted_ratings, test_set$rating)
 rmse_results <- bind_rows(rmse_results,
                           data_frame(method = "Regularized Movie & User Effect",  
-                                     RMSE = model_3_rmse))
+                                     RMSE = model_3_RMSE))
 rmse_results %>% knitr::kable()
 
 
@@ -340,7 +357,7 @@ rmse_results %>% knitr::kable()
 # which are calculated by adding the regularized movie bias b_i and the 
 # regularized user bias b_u to the average rating mu from the actual ratings.
 
-my_reference <- as.factor(edx$rating)
+my_reference <- as.factor(test_set$rating)
 
 my_prediction <- predicted_ratings
 my_prediction <- round(my_prediction) # We miss all half-star ratings, but gain accuracy compared to including them.
