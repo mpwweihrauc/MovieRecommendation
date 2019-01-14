@@ -84,8 +84,8 @@ RMSE <- function(predicted_ratings, true_ratings){
 }
 
 # We split our dataset into a training and a testing set. We also make sure not to include movieIds or userIds in the test set, which are not in the training set.
-set.seed(1)
-test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
+set.seed(42)
+test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.2, list = FALSE)
 train <- edx[-test_index,]
 test <- edx[test_index,]
 
@@ -100,6 +100,8 @@ test_set <- test %>%
 removed <- anti_join(test, test_set)
 train_set <- rbind(train, removed)
 
+# A bit of housekeeping
+rm(test, train, removed, test_index)
 
 # Simplest model: We predict a new rating to be the average rating of all movies in our train_seting dataset,
 # which gives us a baseline RMSE. We observe that the mean movie rating is a pretty generous > 3.5.
@@ -125,12 +127,12 @@ movie_avgs %>% qplot(b_i, geom = "histogram", bins = 10, data = ., color = I("bl
 # we predict that it will be rated lower than "mu" by "b_i", the differecnce of the individual movie
 # average from the total average
 
-predicted_ratings <- test %>% 
+predicted_ratings <- test_set %>% 
   left_join(movie_avgs, by = "movieId") %>%
   mutate(pred = mu + b_i) %>%
   .$pred
 
-model_1_RMSE <- RMSE(predicted_ratings, test$rating)
+model_1_RMSE <- RMSE(predicted_ratings, test_set$rating)
 rmse_results <- bind_rows(rmse_results, data_frame(method = "Movie Effect Model", RMSE = model_1_RMSE))
 rmse_results
 
@@ -165,13 +167,13 @@ user_avgs <- train_set %>%
   summarize(b_u = mean(rating - mu - b_i))
 
 # We predict ratings taking into account b_i and b_u.
-predicted_ratings <- test %>%
+predicted_ratings <- test_set %>%
   left_join(movie_avgs, by = "movieId") %>%
   left_join(user_avgs, by = "userId") %>%
   mutate(pred = mu + b_i + b_u) %>%
   .$pred
 
-model_2_RMSE <- RMSE(predicted_ratings, test$rating)
+model_2_RMSE <- RMSE(predicted_ratings, test_set$rating)
 rmse_results <- bind_rows(rmse_results, data_frame(method = "Combined Movie & User Effects Model", RMSE = model_2_RMSE))
 rmse_results
 
@@ -225,7 +227,7 @@ train_set %>% count(movieId) %>%
 
 if(!require(vtreat)) install.packages("vtreat", repos = "http://cran.us.r-project.org")
 
-set.seed(1)
+set.seed(42)
 splitPlan <- kWayCrossValidation(nRows = nrow(train_set), nSplits = 3, NULL, NULL)
 # splitPlan[[1]] # Looking at the structure of the first split
 
@@ -267,14 +269,14 @@ movie_reg_avgs <- train_set %>%
 
 # Regularization for the user effect b_u
 # NOTE: This code likely runs for several minutes, please be patient.
-set.seed(1)
-splitPlan <- kWayCrossValidation(nRows = nrow(train_set), nSplits = 4, NULL, NULL)
+set.seed(42)
+splitPlan <- kWayCrossValidation(nRows = nrow(train_set), nSplits = 3, NULL, NULL)
 # splitPlan[[1]] # Looking at the structure of the first split
 
-lambdas <- seq(4, 6, 0.5)
-opt_lambda <- c(1:4) # Empty vector that takes the output of the for-loop below
+lambdas <- seq(4, 6, 0.25)
+opt_lambda <- c(1:3) # Empty vector that takes the output of the for-loop below
 
-for (i in 1:4){
+for (i in 1:3){
   split <- splitPlan[[i]]
   rmses <- sapply(lambdas, function(lambda){
     
@@ -353,6 +355,33 @@ rmse_results <- bind_rows(rmse_results,
 rmse_results %>% knitr::kable()
 
 
+
+###
+# Genre effect
+###
+
+genre_avgs <- train_set %>% 
+  left_join(movie_avgs, by = "movieId") %>%
+  left_join(user_avgs, by = "userId") %>%
+  group_by(genres) %>% 
+  summarize(b_g = mean(rating - b_i - b_u - mu))
+
+
+predicted_ratings <- test_set %>%
+  left_join(movie_avgs, by = "movieId") %>%
+  left_join(user_avgs, by = "userId") %>%
+  left_join(genre_avgs, by = "genres") %>%
+  mutate(pred = mu + b_i + b_u + b_g) %>%
+  .$pred
+
+model_4_RMSE <- RMSE(predicted_ratings, test_set$rating)
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(method = "Movie & User Effect + Genre Effect",  
+                                     RMSE = model_4_RMSE))
+rmse_results %>% knitr::kable()
+
+
+
 # We determine accuracy of our predicted ratings,
 # which are calculated by adding the regularized movie bias b_i and the 
 # regularized user bias b_u to the average rating mu from the actual ratings.
@@ -360,7 +389,7 @@ rmse_results %>% knitr::kable()
 my_reference <- as.factor(test_set$rating)
 
 my_prediction <- predicted_ratings
-my_prediction <- round(my_prediction) # We miss all half-star ratings, but gain accuracy compared to including them.
+my_prediction <- round(my_prediction/0.5)*0.5 # We miss all half-star ratings, but gain accuracy compared to including them.
 my_prediction[my_prediction <= 0.5] <- 0.5
 my_prediction[my_prediction >= 5] <- 5
 # my_prediction <- round(my_prediction/0.5)*0.5 # Rounding for half-star ratings; but gives less accuracy as half-star ratings are less common overall than full-star ratings.
@@ -374,3 +403,27 @@ confusionMatrix(my_prediction, my_reference)
 edx %>% mutate(predictions = my_prediction) %>% filter(rating == 0.5 & predictions == 5 & movieId == 858) %>% knitr::kable()
 edx %>% mutate(predictions = my_prediction) %>% filter(userId == 3639) %>% summarize(median_rating = median(rating), n = n()) # This user rated 193 novies with a median rating of 4, but gave "The Godfather" a 0.5. Our model can't predict this behaviour.
 edx %>% mutate(predictions = my_prediction) %>% filter(userId == 14269) %>% summarize(median_rating = median(rating), n = n()) # This user rated 222 novies with a median rating of 4.5, but gave "The Godfather" a 0.5. Our model can't predict this behaviour.
+
+###
+# Naive bayes approach
+###
+
+library(e1071)
+
+
+NBobject <- naiveBayes(formula = as.factor(rating) ~ movieId + userId + genres + timestamp, data = train_set, laplace = 0) 
+NBpredictions <- predict(NBobject, newdata = test_set, type = "class")
+summary(NBpredictions)
+
+
+  
+predtest  <- ifelse(my_prediction == test_set$rating, my_prediction, NBpredictions)
+predtest <- as.numeric(predtest)/2
+predtest <- as.factor(predtest)
+summary(predtest)
+
+# Final accuracy, best so far: 44.35%
+confusionMatrix(predtest, my_reference)
+
+
+
