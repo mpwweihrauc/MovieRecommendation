@@ -85,7 +85,7 @@ RMSE <- function(predicted_ratings, true_ratings){
 
 # We split our dataset into a training and a testing set. We also make sure not to include movieIds or userIds in the test set, which are not in the training set.
 set.seed(42)
-test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.2, list = FALSE)
+test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
 train <- edx[-test_index,]
 test <- edx[test_index,]
 
@@ -411,19 +411,168 @@ edx %>% mutate(predictions = my_prediction) %>% filter(userId == 14269) %>% summ
 library(e1071)
 
 
-NBobject <- naiveBayes(formula = as.factor(rating) ~ movieId + userId + genres + timestamp, data = train_set, laplace = 0) 
-NBpredictions <- predict(NBobject, newdata = test_set, type = "class")
+
+NBmodel <- naiveBayes(formula = rating ~ movieId + userId, data = edx, laplace = 0) 
+
+test_subset <- true_score %>%
+  semi_join(edx, by = "movieId") %>%
+  semi_join(edx, by = "userId")
+
+NBpredictions <- predict(NBmodel, newdata = edx, threshold = 0.001)
 summary(NBpredictions)
+
 
 
   
 predtest  <- ifelse(my_prediction == test_set$rating, my_prediction, NBpredictions)
-predtest <- as.numeric(predtest)/2
-predtest <- as.factor(predtest)
-summary(predtest)
+
+mean(predtest == test_set$rating)
 
 # Final accuracy, best so far: 44.35%
 confusionMatrix(predtest, my_reference)
 
 
 
+
+
+
+
+
+
+
+# Random forest : use combine() to combine several RF objects..
+library(randomForest)
+set.seed(42)
+rf_random <- randomForest(as.factor(rating) ~ movieId + userId, data = train_set[1:1000000, ], ntree = 50)
+print(rf_random)
+plot(rf_random)
+
+
+mean(rf_random$predicted == train_set$rating[1:1000000])
+
+
+install.packages("ranger")
+library(ranger)
+
+subset <- edx
+ranger_forest <- ranger(formula = as.factor(rating) ~ movieId + userId, data = subset, num.trees = 100)
+
+# We make sure that our test_set doesn't contain any movieIds
+# or userIds that don't appear in the subset of the train_set we trained on
+
+test_subset <- true_score %>%
+  semi_join(subset, by = "movieId") %>%
+  semi_join(subset, by = "userId")
+
+# We predict on the test_subset, look at the confusion matrix and determine our accuracy.
+ranger_predict <- predict(ranger_forest, data = test_subset)
+ranger_forest$confusion.matrix
+mean(ranger_predict$predictions == test_subset$rating)
+
+
+
+
+
+
+
+
+
+
+
+
+
+# We split our dataset into a training and a testing set. We also make sure not to include movieIds or userIds in the test set, which are not in the training set.
+set.seed(42)
+test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
+train <- edx[-test_index,]
+test <- edx[test_index,]
+
+# Make sure userId and movieId in test set are also in train set
+
+test_set <- test %>% 
+  semi_join(train, by = "movieId") %>%
+  semi_join(train, by = "userId")
+
+# Add rows removed from test_set set back into train set
+
+removed <- anti_join(test, test_set)
+train_set <- rbind(train, removed)
+
+# A bit of housekeeping
+rm(test, train, removed, test_index)
+
+
+fitControl <- trainControl(method = "repeatedcv", number = 3, repeats = 5)
+rf_model <- train(as.factor(rating) ~ movieId + userId, data = train_set, method = "rf",
+                  trControl = fitControl, verbose = FALSE)
+
+
+
+install.packages("recommenderlab")
+install.packages("reshape2")
+library(recommenderlab)
+library(reshape2)
+
+
+users <- factor(train_set$userId)
+movies <- factor(train_set$movieId)
+
+
+sparse_matrix <- sparseMatrix(as.numeric(users), as.numeric(movies), dimnames = list(as.character(levels(users)), as.character(levels(movies))), x = train_set$rating)
+
+real_rating_matrix <- new("realRatingMatrix", data = sparse_matrix)
+
+head(as(real_rating_matrix, "data.frame")) # We can turn the realRatingMatrix into a dataframe
+
+rrm_norm <- normalize(real_rating_matrix) # We normalize our rrm
+rrm_norm
+
+rec_model = Recommender(real_rating_matrix[1:nrow(real_rating_matrix)],
+                  method = "UBCF", param = list(normalize = "Z-score", method = "Cosine", nn = 5))
+
+
+print(rec_model)
+names(getModel(rec_model))
+getModel(rec_model)$nn
+
+# Predictions, not on the test set, but this fills the user item matrix so that for every user and movie there's a predicted rating
+recom_matrix <- predict(rec_model, real_rating_matrix[1:nrow(real_rating_matrix)], type = "ratings")
+recom_matrix
+
+
+
+# Get ratings list
+rec_list <-as(recom_matrix, "list")
+head(summary(rec_list))
+ratings <- NULL # Initialize vector for for loop
+# For all lines in test file, one by one
+for ( u in 1:length(test_set[,"rating"]))
+{
+  # Read userid and movieid from columns 2 and 3 of test data
+  userid <- test_set[u,"userId"]
+  movieid <- test_set[u,"movieId"]
+  
+  # Get as list & then convert to data frame all recommendations for user: userid
+  u1 <- as.data.frame(rec_list[[userid]])
+  # Create a (second column) column-id in the data-frame u1 and populate it with row-names
+  # Remember (or check) that rownames of u1 contain are by movie-ids
+  # We use row.names() function
+  u1$id <- row.names(u1)
+  # Now access movie ratings in column 1 of u1
+  x = u1[u1$id == movieid, 1]
+  # print(u)
+  # print(length(x))
+  # If no ratings were found, assign 0. You could also
+  #   assign user-average
+  if (length(x) == 0)
+  {
+    ratings[u] <- 0
+  }
+  else
+  {
+    ratings[u] <- x
+  }
+  
+}
+length(ratings)
+tx <- cbind(test_set[, 1], round(ratings))
