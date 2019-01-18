@@ -57,7 +57,13 @@ rm(dl, ratings, movies, test_index, temp, movielens, removed)
 
 
 
-# Begin
+
+
+
+#############
+### Begin ###
+#############
+
 # Exploratory data analysis, we are getting familiar with our dataset
 
 # Each row represents a rating given by a user to a movie
@@ -78,14 +84,14 @@ edx %>%
 
 
 # We write a loss-function that computes the Residual Mean Squared Error ("typical error") as
-# our measure of accuracy. The value is the typical error in star rating we would make
+# our measure of accuracy. The value is the typical error in star rating we would make.
 RMSE <- function(predicted_ratings, true_ratings){
   sqrt(mean((predicted_ratings - true_ratings)^2))
 }
 
 # We split our dataset into a training and a testing set. We also make sure not to include movieIds or userIds in the test set, which are not in the training set.
-set.seed(42)
-test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
+set.seed(1)
+test_index <- createDataPartition(y = edx_mod$rating, times = 1, p = 0.1, list = FALSE)
 train <- edx[-test_index,]
 test <- edx[test_index,]
 
@@ -227,21 +233,22 @@ train_set %>% count(movieId) %>%
 
 if(!require(vtreat)) install.packages("vtreat", repos = "http://cran.us.r-project.org")
 
-set.seed(42)
+set.seed(1)
 splitPlan <- kWayCrossValidation(nRows = nrow(train_set), nSplits = 3, NULL, NULL)
 # splitPlan[[1]] # Looking at the structure of the first split
 
-lambdas <- seq(1.5, 3, 0.25)
+lambdas <- seq(1.5, 3, 0.5)
 opt_lambda <- c(1:3) # Empty vector that takes the output of the for-loop below
 
 for (i in 1:3){
 split <- splitPlan[[i]]
 rmses <- sapply(lambdas, function(lambda){
+  
 b_i <- train_set[split$train, ] %>% 
   group_by(movieId) %>%
   summarize(b_i = sum(rating - mu)/(n() + lambda), n_i = n())
 
-test_set <- train_set[split$app, ] %>%
+test_temp <- train_set[split$app, ] %>%
   semi_join(train_set[split$train, ], by = "movieId") %>%
   semi_join(train_set[split$train, ], by = "userId")
 
@@ -250,7 +257,7 @@ predicted_ratings <- test_set %>%
   mutate(pred = mu + b_i) %>%
   .$pred
 
-return(RMSE(predicted_ratings, test_set$rating))
+return(RMSE(predicted_ratings, test_temp$rating))
 })
 
 opt_lambda[i] <- lambdas[which.min(rmses)]
@@ -269,11 +276,11 @@ movie_reg_avgs <- train_set %>%
 
 # Regularization for the user effect b_u
 # NOTE: This code likely runs for several minutes, please be patient.
-set.seed(42)
+set.seed(1)
 splitPlan <- kWayCrossValidation(nRows = nrow(train_set), nSplits = 3, NULL, NULL)
 # splitPlan[[1]] # Looking at the structure of the first split
 
-lambdas <- seq(4, 6, 0.25)
+lambdas <- seq(4, 6, 0.5)
 opt_lambda <- c(1:3) # Empty vector that takes the output of the for-loop below
 
 for (i in 1:3){
@@ -353,6 +360,21 @@ rmse_results <- bind_rows(rmse_results,
                           data_frame(method = "Regularized Movie & User Effect",  
                                      RMSE = model_3_RMSE))
 rmse_results %>% knitr::kable()
+
+
+
+edx_mod <- edx %>% mutate(year = as.numeric(str_sub(title,-5,-2)))
+edx_mod <- edx_mod %>% separate_rows(genres, sep = "\\|")
+
+
+
+
+
+
+
+
+
+
 
 
 
