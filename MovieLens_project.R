@@ -125,7 +125,7 @@ baseline_RMSE
 rmse_results <- data_frame(method = "Simplest model: Average rating", RMSE = baseline_RMSE)
 rmse_results
 
-# To improve the model, we utilize the fact that different movies are reated differently.
+# To improve the model, we utilize the fact that different movies are rated differently.
 # We compute the deviation of each movies' mean rating from the total mean of all movies "mu".
 # We call the resulting variable "b" (as in "bias") for each movie "i": b_i
 
@@ -427,9 +427,10 @@ RMSE(my_prediction, validation$rating)
 
 ##############################################################
 # Final RMSE value of the predicted ratings without rounding #
-RMSE(predicted_ratings, validation$rating)                   #
-rmse_results %>% knitr::kable()                              #
 ##############################################################
+RMSE(predicted_ratings, validation$rating)                   
+rmse_results %>% knitr::kable()                              
+
 
 
 
