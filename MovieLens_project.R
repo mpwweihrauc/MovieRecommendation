@@ -152,8 +152,8 @@ rmse_results
 
 # We can see that the RMSE improved when we take into account that different movies are rated differently.
 
-# Do users rate different movies differently? We compute b_u, the user-specific effect.
-# We can see that some users rate movies generally higher/lower than others,
+# Do users rate different movies differently? We compute "b_u", the user-specific effect.
+# Below, we can see that some users rate movies generally higher/lower than others,
 # while most fall in-between, but also that user rating of movies is generally higher
 # than a 2.5 "true average" rating. This was reflected previously in the high mean rating of > 3.5.
 
@@ -166,13 +166,13 @@ edx %>%
   ggplot(aes(b_u)) + 
   geom_histogram(bins = 30, color = "black", fill = "orange")
 
-# Calculation of the user effect b_u.
+# Calculation of the user effect "b_u".
 user_avgs <- edx %>%
   left_join(movie_avgs, by = "movieId") %>%
   group_by(userId) %>%
   summarize(b_u = mean(rating - mu - b_i))
 
-# We predict ratings taking into account b_i and b_u.
+# We predict ratings taking into account "b_i" and "b_u".
 predicted_ratings <- validation %>%
   left_join(movie_avgs, by = "movieId") %>%
   left_join(user_avgs, by = "userId") %>%
@@ -182,6 +182,11 @@ predicted_ratings <- validation %>%
 model_2_RMSE <- RMSE(predicted_ratings, validation$rating)
 rmse_results <- bind_rows(rmse_results, data_frame(method = "Combined Movie & User Effects Model", RMSE = model_2_RMSE))
 rmse_results
+
+# We can see that including the user-effect "b_u" in our rating predictions further reduced the RMSE.
+# It appears that we are still off by ~0.865 stars on average. Are we correctly predicting the best and worst movies
+# with our model?
+
 
 ###
 # We take a look at which movies we predict to be the best or worst based on our computed b_i.
@@ -227,12 +232,12 @@ edx %>% count(movieId) %>%
   knitr::kable()
 
 ###
-# Indeed, the best and worst movies (largest b_i in either direction) mostly have very few ratings,
+# Indeed, the best and worst movies (largest "b_i" in either direction) mostly have very few ratings,
 # sometimes even just a single one.
-# Larger estimates of b_i are likely for movies with very few ratings. The same holds true for the
-# user effect b_u, in those cases where users only rated a very small number of movies. 
+# Larger estimates of "b_i" are likely for movies with very few ratings. The same holds true for the
+# user-effect "b_u", in those cases where users only rated a very small number of movies. 
 # We can penalize these by making use of regularization.
-# We determine the Lambda that minimizes RMSE. This shrinks the b_i and b_u in case of small number
+# We determine the Lambda that minimizes RMSE. This shrinks the "b_i" and "b_u" in case of small number
 # of ratings.
 # Essentially, by shrinking our estimates when we are rather unsure, we are being more conservative
 # in our estimations.
@@ -249,6 +254,7 @@ lambdas <- seq(1.5, 3, 0.25) # We define the range of values we test for Lambda.
 opt_lambda <- 0 # We initialize an empty vector that takes the results of the for-loop below
 
 # NOTE: This code likely runs for several minutes, please be patient.
+# The range for Lambda has been narrowed down after testing for all lambdas between 0 and 20 to shorten computation time here.
 
 for (i in 1:length(splitPlan)){
   
@@ -289,7 +295,7 @@ movie_reg_avgs <- edx %>%
   summarize(b_i = sum(rating - mu)/(n() + b_i_opt_lambda), n_i = n()) 
 
 
-# We plot the regularized estimates against the least squares estimates. Some of the most extreme b_i
+# We plot the regularized estimates against the least squares estimates. Some of the most extreme "b_i"
 # are shrunk by regularization.
 data_frame(original = movie_avgs$b_i, 
            regularlized = movie_reg_avgs$b_i, 
@@ -297,7 +303,7 @@ data_frame(original = movie_avgs$b_i,
   ggplot(aes(original, regularlized, size = sqrt(n))) + 
   geom_point(shape = 1, alpha = 0.5)
 
-# Our new top 10 best and worst movies using regularized values for b_i.
+# Our new top 10 best and worst movies using regularized values for "b_i".
 # We successfully removed most movies with only very few ratings from the top.
 
 edx %>%
@@ -329,6 +335,8 @@ opt_lambda <- 0 # Empty vector that takes the output of the for-loop below
 
 
 # NOTE: This code likely runs for several minutes, please be patient.
+# The range for Lambda has been narrowed down after testing for all lambdas
+# between 0 and 20 to shorten computation time here.
 for (i in 1:length(splitPlan)){
   
 split <- splitPlan[[i]]
@@ -360,14 +368,14 @@ opt_lambda[i] <- lambdas[which.min(rmses)]
 opt_lambda
 b_u_opt_lambda <- mean(opt_lambda)
 
-# We calculate regularized user effect b_u utilizing the optimized Lambda value (should be ~ 5)
+# We calculate regularized user-effect "b_u" utilizing the optimized Lambda value (should be ~ 5)
 user_reg_avgs <- edx %>% 
   left_join(movie_reg_avgs, by = "movieId") %>%
   group_by(userId) %>% 
   summarize(b_u = sum(rating - b_i - mu)/(n() + b_u_opt_lambda), n_i = n()) 
 
 
-# We predict ratings based on regularized b_i and b_u.
+# We predict ratings based on regularized "b_i" and "b_u".
 
 predicted_ratings <- validation %>%
   left_join(movie_reg_avgs, by = "movieId") %>%
@@ -377,9 +385,13 @@ predicted_ratings <- validation %>%
 
 model_3_RMSE <- RMSE(predicted_ratings, validation$rating)
 rmse_results <- bind_rows(rmse_results,
-                          data_frame(method = "Regularized Movie & User Effect",  
+                          data_frame(method = "Combined regularized Movie & User Effect",  
                                      RMSE = model_3_RMSE))
 rmse_results %>% knitr::kable()
+
+# It appears that regularization of "b_i" and "b_u" had little effect on the RMSE,
+# but did improve the best and worst movies we predict.
+
 
 
 ########### 
@@ -411,9 +423,18 @@ mean(my_prediction == validation$rating)
 RMSE(my_prediction, validation$rating)
 
 
-# Final RMSE value of the predicted ratings without rounding
-RMSE(predicted_ratings, validation$rating)
+
+
+##############################################################
+# Final RMSE value of the predicted ratings without rounding #
+RMSE(predicted_ratings, validation$rating)                   #
+rmse_results %>% knitr::kable()                              #
+##############################################################
+
+
+
 
 ############## 
 # Conclusion #
 ##############
+
