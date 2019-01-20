@@ -167,6 +167,7 @@ edx %>%
   xlab("Mean rating") +
   ylab("Number of users") +
   ggtitle("Mean movie ratings given by users") +
+  scale_x_discrete(limits = c(seq(0.5,5,0.5))) +
   theme_light()
 ```
 
@@ -176,9 +177,10 @@ edx %>%
 
 ## Modelling Approach
 
-We write a loss-function that computes the Residual Mean Squared Error (RMSE, or "typical error") as
-our measure of accuracy. The value is the typical error in star rating we would make upon predicting
-a movie rating.
+We begin by writing a loss-function that computes the Residual Mean Squared Error (RMSE, or "typical error") as our measure of model accuracy. The value is the typical error in star rating we would make upon predicting a movie rating. $y_{u,i}$ here represents the rating for movie $i$ given by user $u$ and $N$ stands for the number of user/movie combinations. We denote our rating predictions from user $u$ for movie $i$ as $\hat{y}_{u,i}$.
+
+$$ RMSE = \sqrt{\frac{1}{N}\displaystyle\sum_{u,i} (\hat{y}_{u,i}-y_{u,i})^{2}} $$
+
 
 ```{r, echo = TRUE}
 RMSE <- function(predicted_ratings, true_ratings){
@@ -186,31 +188,37 @@ RMSE <- function(predicted_ratings, true_ratings){
 }
 ```
 
+### 1. The Simplest Model: Average Movie Rating
 We begin by building a very simple model: We predict a new movie rating to be the average rating of all
-movies in our training dataset `edx`.
-This gives us our baseline RMSE to compare future modelling approaches against.
-We observe that the mean movie rating is a pretty generous > 3.5 stars, quite a bit above the "average" (as in 2.5 stars out of 5).
+movies in our training dataset `edx`, completely disregarding the user who gives it. This gives us our baseline RMSE to compare future modelling approaches against. We observe that the mean movie rating $\mu$ is a pretty generous > 3.5 stars, quite a bit above the actual average (i.e. 2.5 stars).
+Our simplest model predicts $Y_{u,i}$ as $\mu$ plus the independent errors $\epsilon_{u,i}$, which are sampled from the same distribution and are centered at 0. This very simple model makes the assumption that all differences in movie ratings are explained by random variation alone.
+
+
+$$ Y_{u, i} = \mu + \epsilon_{u, i}  $$
+
 We create a table to record our approaches and the RMSEs they generate.
 
 
 ```{r, echo = TRUE}
 mu <- mean(edx$rating)
 print(mu)
-baseline_RMSE <- RMSE(mu, edx$rating)
+baseline_RMSE <- RMSE(mu, validation$rating)
 baseline_RMSE
 
 
-rmse_results <- data_frame(Method = "Simplest model: Average rating",
-                           RMSE = baseline_RMSE)
+rmse_results <- data_frame(Method = "Average rating", RMSE = baseline_RMSE)
 rmse_results
 ```
 
-
-To improve upon the model, we utilize the fact that different movies are rated differently.
-We compute the deviation of each movies' mean rating from the total mean of all movies `mu`.
-We call the resulting variable "b" (as in "bias") for each movie "i": `b_i`
+But can we do better than simply predicting the average rating? We will begin by incorporating some of the insights we gained during the exploratory data analysis.
 
 
+### 2. Improving the Simplest Model: Incorporating the "Movie-effect"
+To improve upon the model, we utilize the fact that movies are actually rated differently: Some movies are simply better or more popular than others, which is reflected in their rating being higher or lower than the average movie rating $\mu$.
+We compute the estimated deviation of each movies' mean rating from the total mean of all movies $\mu$.
+We call the resulting variable "b" (as in "bias") for each movie "i": $\hat{b}_{i}$, which represents the average ranking of movie $i$. We add this term to our model equation from above.
+
+$$ Y_{u, i} = \mu + b_{i} + \epsilon_{u, i}  $$
 
 ```{r, echo = TRUE}
 movie_avgs <- edx %>%
@@ -219,7 +227,7 @@ movie_avgs <- edx %>%
 ```
 
 
-When plotting our computed `b_i`, we can see that there are large differences in how different movies are rated.
+When plotting our computed $b_{i}$, we can see that there are large differences in how different movies are rated.
 
 
 ```{r, echo = FALSE, fig.height=4, fig.width=5}
@@ -227,7 +235,7 @@ movie_avgs %>% qplot(b_i, geom = "histogram", bins = 10, data = ., color = I("bl
 ```
 
 
-We then predict movie ratings based on the fact that different movies are rated differently by adding the computed `b_i` to `mu`. If an individual movie is on average rated worse than the average rating of all movies `mu`, we predict that it will be rated lower than `mu` by `b_i`, the difference of the individual movie average from the total average.
+We then predict movie ratings based on the fact that different movies are rated differently by adding the computed $b_{i}$ to $\mu$. If an individual movie is on average rated worse than the average rating of all movies $\mu$, we predict that it will be rated lower than $\mu$ by $b_{i}$, the difference of the individual movie average from the total average.
 
 
 ```{r, echo = TRUE}
@@ -242,9 +250,14 @@ rmse_results <- bind_rows(rmse_results, data_frame(method = "Movie Effect Model"
 rmse_results
 ```
 
-We can see that the RMSE improves when we take into account that different movies are rated differently.
-Do users rate different movies differently? We compute `b_u`, the user-specific effect.
+We can see that the RMSE improves when we take into account that different movies are rated differently. But this model is still in total disregard of individual user rating patterns. We will use some of the insights gained about user rating distribution to further improve upon our model.
+
+
+### 3. Augmenting the Model with the "User-effect"
+Do users rate different movies differently? We compute $b_{u}$, the "User-effect".
 We can see that some users rate movies generally higher/lower than others, while most fall in-between, but also that user rating of movies is generally higher than a 2.5 "true average" rating. This was reflected previously in the high mean rating of > 3.5. We then predict the ratings taking into account movie and user effects together.
+
+$$ Y_{u, i} = \mu + b_{i} + b_{u} + \epsilon_{u, i}  $$
 
 ```{r, echo = TRUE}
 user_avgs <- edx %>%
@@ -498,3 +511,4 @@ We arrive at an accuracy of 24.8% and an RMSE of 0.8648490.
 # Conclusion
 
 The ~25% prediction accuracy value of this model can be explained by several facts. User preference for certain types of movies, genres, or even particular actors and directors most likely plays a major role in determining the ratings given. In fact, many modelling approaches in the Netflix challenge incorporated more user information than what was given here and it was found that user profession has a large predictive value. Other possible approaches would include item- and/or user-based collaborative filtering, where the relatively sparse matrix of user ratings (not every user rated every movie in the dataset, in fact far from it) is filled by matching similar user's preferences.
+Whenever a user hates or loves just one or a few particular movies amongst all of his or her ratings, our model may completely miss the mark.

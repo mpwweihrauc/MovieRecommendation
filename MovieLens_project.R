@@ -118,7 +118,7 @@ RMSE <- function(predicted_ratings, true_ratings){
 # We observe that the mean movie rating is a pretty generous > 3.5 stars, quite a bit above "average" (as in 2.5).
 
 mu <- mean(edx$rating)
-baseline_RMSE <- RMSE(mu, edx$rating)
+baseline_RMSE <- RMSE(mu, validation$rating)
 baseline_RMSE
 
 # We create a table to record our approaches and the RMSEs they generate.
