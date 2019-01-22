@@ -2,11 +2,15 @@
 title: 'HarvardX: PH125.9x Data Science: Capstone - MovieLens Project'
 author: "Martin Weihrauch"
 date: "January 22, 2019"
-output: pdf_document
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
 ---
 
 
-# 1. Executive Summary
+# Executive Summary
 This report begins by introducing the general idea and problem of the project and by stating its aims. After dataset preparation and setup, exploratory data analysis is carried out to gain the necessary insights into the data in order to develop a machine learning algorithm that predicts movie ratings. Next, the general modelling approach is broken down step-by-step and ends with the final model and its results in terms of prediction accuracy. This is then followed by a discussion section where strengths and weaknesses of the generated modelling approach are broken down and alternative approaches are briefly discussed. Finally, the report ends with some concluding remarks.
 
 ## Introduction
@@ -17,10 +21,8 @@ Movie recommendation systems work by knowing what a user likes (e.g. movie genre
   It is not the purpose of this project to give a "Top 10" best movies to watch recommendation list for a particular user, but instead to make predictions about the star rating users would give to different movies.
 
 
-
-
 ## Aim of the project
-The aim of this project is to build a machine learning algorithm that predicts user ratings (from 0.5 to 5 stars) for movies based on the dataset ["MovieLens"](http://files.grouplens.org/datasets/movielens/ml-10m.zip) with 10 million ratings.
+The aim of this project is to build a machine learning algorithm that predicts user ratings (from 0.5 to 5 stars) for movies based on the dataset ["MovieLens"](http://files.grouplens.org/datasets/movielens/ml-10m.zip) with 10 million user ratings of over 10500 different movies.
   The algorithm is to be trained on a provided training subset (`edx`) of ["MovieLens"](http://files.grouplens.org/datasets/movielens/ml-10m.zip) and evaluation is to be carried out on the provided testing subset (`validation`).
   The metric used to evaluate algorithm performance is the residual mean squared error, or RMSE. This represents the typical error in star ratings the predicted rating would be off by.
 
@@ -81,14 +83,15 @@ rm(dl, ratings, movies, test_index, temp, movielens, removed)
 ```
 \pagebreak
 
-# 2. Methods and Analysis
+# Methods and Analysis
 
 ## Exploratory Data Analysis
 As a first step, we want to get familiar with our dataset. A quick glance at the first few entries reveals that each row represents a single rating of a user for a single movie, including the movie title, genre and timestamp at which the rating was given.
 
 
 ```{r, echo = FALSE}
-head(edx) 
+head(edx) %>%
+  print.data.frame()
 ```
 
 
@@ -97,7 +100,7 @@ A quick summary of the dataset tells us that there are no missing values to deal
 
 
 ```{r, echo = FALSE}
-summary(edx) 
+summary(edx)
 ```
 
 
@@ -106,7 +109,9 @@ We are dealing with over 9 million movie ratings of ~70000 unique users giving r
 
 
 ```{r, echo = FALSE}
-edx %>% summarize(n_users = n_distinct(userId), n_movies = n_distinct(movieId))
+edx %>%
+  summarize(n_users = n_distinct(userId), n_movies = n_distinct(movieId)) %>%
+  print.data.frame()
 ```
 
 
@@ -117,7 +122,8 @@ We take a look at the distribution of ratings: 4 is the most common rating, foll
 ```{r, echo = FALSE}
 edx %>%
   count(rating) %>%
-  arrange(desc(n))
+  arrange(desc(n)) %>%
+  print.data.frame()
 ```
 
 To further strengthen our intuition about the rating distribution, we take a look at a histrogram of it.
@@ -204,7 +210,8 @@ edx %>%
   separate_rows(genres, sep = "\\|") %>%
   group_by(genres) %>%
   summarize(count = n(), avg_rating = mean(rating), norm_avg_rating = mean(rating) - mu) %>%
-  arrange(desc(count))
+  arrange(desc(count)) %>%
+  print.data.frame()
 ```
 
 
@@ -242,7 +249,7 @@ baseline_RMSE <- RMSE(mu, validation$rating)
 
 
 rmse_results <- data_frame(Method = "Average rating", RMSE = baseline_RMSE)
-print(rmse_results)
+rmse_results %>% knitr::kable()
 ```
 
 But can we do better than simply predicting the average rating? We will begin by incorporating some of the insights we gained during the exploratory data analysis.
@@ -283,7 +290,7 @@ predicted_ratings <- validation %>%
 
 model_1_RMSE <- RMSE(predicted_ratings, validation$rating)
 rmse_results <- bind_rows(rmse_results, data_frame(Method = "Movie Effect Model", RMSE = model_1_RMSE))
-print(rmse_results)
+rmse_results %>% knitr::kable()
 ```
 
 We can see that the RMSE improves when we take into account that different movies are rated differently. But this model is still in total disregard of individual user rating patterns. We will use some of the insights gained about user rating distribution to further improve upon our model.
@@ -310,6 +317,8 @@ edx %>%
 Our model then becomes:
 $$ Y_{u, i} = \mu + b_{i} + b_{u} + \epsilon_{u, i}  $$
 
+
+And the corresponding RMSE value:
 ```{r, echo = FALSE}
 user_avgs <- edx %>%
   left_join(movie_avgs, by = "movieId") %>%
@@ -325,7 +334,7 @@ predicted_ratings <- validation %>%
 model_2_RMSE <- RMSE(predicted_ratings, validation$rating)
 rmse_results <- bind_rows(rmse_results, data_frame(Method = "Combined Movie & User Effects Model", 
                                                    RMSE = model_2_RMSE))
-print(rmse_results)
+rmse_results %>% knitr::kable()
 ```
 
 
@@ -548,10 +557,11 @@ Here is our final RMSE value of the predicted ratings without rounding.
 
 ```{r, echo = FALSE}
 RMSE(predicted_ratings, validation$rating)
-
-rmse_results %>% knitr::kable()                              
 ```
 
+```{r, echo = FALSE}
+knitr::kable(rmse_results)
+```
 
 We arrive at an accuracy of 24.8% and an RMSE of 0.8648490 when modelling with the regularized movie and user effects.
 \pagebreak
@@ -559,7 +569,6 @@ We arrive at an accuracy of 24.8% and an RMSE of 0.8648490 when modelling with t
 # Discussion
 
 
-## 
 
 
 
