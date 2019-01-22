@@ -98,6 +98,42 @@ edx %>% count(userId) %>%
   ylab("NUmber of users") +
   ggtitle("Number of ratings given by users")
 
+# Are certain movie genres overrepresented? How about different genre ratings?
+# We can see that e.g. Film-Noir and War movies tend to be rated better than average, while horror movies are rated lower.
+mu <- mean(edx$rating)
+
+edx %>%
+  separate_rows(genres, sep = "\\|") %>%
+  group_by(genres) %>%
+  summarize(count = n(), avg_rating = mean(rating), norm_avg_rating = mean(rating) - mu) %>%
+  arrange(desc(count))
+
+# What are some of these movies with very low ratings? They appear to be pretty obscure
+edx %>% 
+  group_by(movieId) %>%
+  summarize(count = n()) %>% 
+  filter(count == 1) %>%
+  left_join(edx, by = "movieId") %>%
+  group_by(title) %>%
+  summarize(rating = rating, count = count) %>%
+  slice(1:20) %>%
+  knitr::kable()
+
+# Which movie genres were popular over the years? 
+# We extract the release year information from the title column and separate the genres column so each sub-genre gets its own row for every movie.
+edx %>% 
+  mutate(year = str_sub(title, start = -5, end = -2)) %>%
+  separate_rows(genres, sep = "\\|") %>%
+  group_by(genres, year) %>%
+  summarize(count = n()) %>%
+  ggplot(aes(x = year, y = count, color = genres)) +
+  geom_line()
+  
+
+
+
+
+
 
 ########################################################################################
 # Data analysis and modeling approach, with some additional visualizations for clarity #
@@ -258,32 +294,32 @@ opt_lambda <- 0 # We initialize an empty vector that takes the results of the fo
 
 for (i in 1:length(splitPlan)){
   
-split <- splitPlan[[i]]
-
-rmses <- sapply(lambdas, function(lambda){
+  split <- splitPlan[[i]]
   
-b_i <- edx[split$train, ] %>% 
-  group_by(movieId) %>%
-  summarize(b_i = sum(rating - mu)/(n() + lambda), n_i = n()) # Lambda is used to penalize b_i for small n()
-
-# We generate a temporary test-set out of our training data edx
-# by using the split from kWayCrossValidation. No information from our true validation set is used.
-test_temp <- edx[split$app, ] %>%
-  semi_join(edx[split$train, ], by = "movieId") %>%
-  semi_join(edx[split$train, ], by = "userId")
-
-# Prediction of ratings with temporary test-set
-predicted_ratings <- test_temp %>%
-  left_join(b_i, by = "movieId") %>%
-  mutate(pred = mu + b_i) %>%
-  .$pred
-
-# Calculation of the resulting RMSE with Lambda
-return(RMSE(predicted_ratings, test_temp$rating))
-})
-
-opt_lambda[i] <- lambdas[which.min(rmses)]
-
+  rmses <- sapply(lambdas, function(lambda){
+    
+    b_i <- edx[split$train, ] %>% 
+      group_by(movieId) %>%
+      summarize(b_i = sum(rating - mu)/(n() + lambda), n_i = n()) # Lambda is used to penalize b_i for small n()
+    
+    # We generate a temporary test-set out of our training data edx
+    # by using the split from kWayCrossValidation. No information from our true validation set is used.
+    test_temp <- edx[split$app, ] %>%
+      semi_join(edx[split$train, ], by = "movieId") %>%
+      semi_join(edx[split$train, ], by = "userId")
+    
+    # Prediction of ratings with temporary test-set
+    predicted_ratings <- test_temp %>%
+      left_join(b_i, by = "movieId") %>%
+      mutate(pred = mu + b_i) %>%
+      .$pred
+    
+    # Calculation of the resulting RMSE with Lambda
+    return(RMSE(predicted_ratings, test_temp$rating))
+  })
+  
+  opt_lambda[i] <- lambdas[which.min(rmses)]
+  
 }
 opt_lambda # All Lambda values from the k = 5 cross validations
 b_i_opt_lambda <- mean(opt_lambda) # We use the mean as our optimal Lambda value
@@ -339,30 +375,30 @@ opt_lambda <- 0 # Empty vector that takes the output of the for-loop below
 # between 0 and 20 to shorten computation time here.
 for (i in 1:length(splitPlan)){
   
-split <- splitPlan[[i]]
-
-rmses <- sapply(lambdas, function(lambda){
+  split <- splitPlan[[i]]
+  
+  rmses <- sapply(lambdas, function(lambda){
     
-b_u <- edx[split$train, ] %>% 
+    b_u <- edx[split$train, ] %>% 
       left_join(movie_reg_avgs, by = "movieId") %>%
       group_by(userId) %>%
       summarize(b_u = sum(rating - b_i - mu)/(n() + lambda), n_i = n())
     
-test_temp <- edx[split$app, ] %>%
+    test_temp <- edx[split$app, ] %>%
       semi_join(edx[split$train, ], by = "movieId") %>%
       semi_join(edx[split$train, ], by = "userId")
     
-predicted_ratings <- test_temp %>%
+    predicted_ratings <- test_temp %>%
       left_join(movie_reg_avgs, by = "movieId") %>%
       left_join(b_u, by = "userId") %>%
       mutate(pred = mu + b_i + b_u) %>%
       .$pred
-
-# Calculation of the resulting RMSE with Lambda
-return(RMSE(predicted_ratings, test_temp$rating))
-})
+    
+    # Calculation of the resulting RMSE with Lambda
+    return(RMSE(predicted_ratings, test_temp$rating))
+  })
   
-opt_lambda[i] <- lambdas[which.min(rmses)]
+  opt_lambda[i] <- lambdas[which.min(rmses)]
   
 }
 opt_lambda
