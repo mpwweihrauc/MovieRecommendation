@@ -284,7 +284,7 @@ edx %>% count(movieId) %>%
 
 
 set.seed(1)
-splitPlan <- kWayCrossValidation(nRows = nrow(edx), nSplits = 5, NULL, NULL) # We split our training data into k = 5 different train/test sets for cross-validation
+splitPlan <- kWayCrossValidation(nRows = nrow(edx), nSplits = 3, NULL, NULL) # We split our training data into k = 3 different train/test sets for cross-validation
 
 lambdas <- seq(1.5, 3, 0.25) # We define the range of values we test for Lambda. The range has been set as small as possible to reduce computation times.
 opt_lambda <- 0 # We initialize an empty vector that takes the results of the for-loop below
@@ -429,7 +429,6 @@ rmse_results %>% knitr::kable()
 # but did improve the best and worst movies we predict.
 
 
-
 ########### 
 # Results #
 ###########
@@ -459,18 +458,8 @@ mean(my_prediction == validation$rating)
 RMSE(my_prediction, validation$rating)
 
 
-
-
 ##############################################################
 # Final RMSE value of the predicted ratings without rounding #
 ##############################################################
 RMSE(predicted_ratings, validation$rating)                   
-rmse_results %>% knitr::kable()                              
-
-
-
-
-
-############## 
-# Conclusion #
-##############
+rmse_results %>% knitr::kable()

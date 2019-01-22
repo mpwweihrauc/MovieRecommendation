@@ -1,28 +1,32 @@
 ---
 title: 'HarvardX: PH125.9x Data Science: Capstone - MovieLens Project'
 author: "Martin Weihrauch"
-date: "January 19, 2019"
+date: "January 22, 2019"
 output: pdf_document
 ---
 
 
 # 1. Executive Summary
-This report begins by introducing the general idea and problem of the project and by stating its aims. After dataset preparation and setup, exploratory data analysis is carried out to gain the necessary insights into the data in order to develop a machine learning algorithm that predicts movie ratings. Next, the general modelling approach is broken down step-by-step and ends with the final model and its results in terms of prediction accuracy. This is then followed by a discussion section where strengths and weaknesses of the generated modelling approach are broken down and alternative approaches are briefly discussed. Finally, this report ends with some concluding remarks.
+This report begins by introducing the general idea and problem of the project and by stating its aims. After dataset preparation and setup, exploratory data analysis is carried out to gain the necessary insights into the data in order to develop a machine learning algorithm that predicts movie ratings. Next, the general modelling approach is broken down step-by-step and ends with the final model and its results in terms of prediction accuracy. This is then followed by a discussion section where strengths and weaknesses of the generated modelling approach are broken down and alternative approaches are briefly discussed. Finally, the report ends with some concluding remarks.
 
 ## Introduction
 In 2006, Netflix offered a million US-Dollar price to whomever was able to surpass the performance of their movie recommendation algorithm by at least 10%. This goal was achieved by ["Team BellKor's Pragmatic Chaos""](https://www.netflixprize.com/community/topic_1537.html) in 2009, after a nearly 3-year long contest.
-Recommendation systems are a common occurrence nowadays and companies, big and small, employ them to increase sales numbers. It doesn't matter whether it is a new book on Amazon you might like to read, or the next popular song you might want to listen to on Spotify.
+  Recommendation systems are a common occurrence nowadays and companies, big and small, employ them to increase sales numbers. It doesn't matter whether it is a new book on Amazon you might like to read, or the next popular song you might want to listen to on Spotify.
+Movie recommendation systems work by knowing what a user likes (e.g. movie genres, actors) to then recommend more similar movies.
+  It can become extremely challenging to recommend a movie to a user who really loves war dramas such as "Saving Private Ryan", but at the same time also really likes pacifist movies (or really hates one or a few particular war dramas, but loves all the rest). The more a recommendation system knows about what users like, the better a recommendation it can make.
+  It is not the purpose of this project to give a "Top 10" best movies to watch recommendation list for a particular user, but instead to make predictions about the star rating users would give to different movies.
 
 
 
 
 ## Aim of the project
-The aim of this project is to build a machine learning algorithm that predicts user ratings for movies based on the dataset ["MovieLens"](http://files.grouplens.org/datasets/movielens/ml-10m.zip) with 10 million ratings. The algorithm is to be trained on a provided training subset (`edx`) of ["MovieLens"](http://files.grouplens.org/datasets/movielens/ml-10m.zip) and evaluation is to be carried out on the provided testing subset (`validation`).
-The metric used to evaluate algorithm performance is the residual mean squared error, or RMSE.
+The aim of this project is to build a machine learning algorithm that predicts user ratings (from 0.5 to 5 stars) for movies based on the dataset ["MovieLens"](http://files.grouplens.org/datasets/movielens/ml-10m.zip) with 10 million ratings.
+  The algorithm is to be trained on a provided training subset (`edx`) of ["MovieLens"](http://files.grouplens.org/datasets/movielens/ml-10m.zip) and evaluation is to be carried out on the provided testing subset (`validation`).
+  The metric used to evaluate algorithm performance is the residual mean squared error, or RMSE. This represents the typical error in star ratings the predicted rating would be off by.
 
 
 ## Dataset Preparation
-The "MovieLens" dataset is automatically downloaded and prepared for analysis by splitting it into a training (90% of the data) and a test set (10% of the data. All necessary R packages are downloaded and loaded to execute the analysis.
+The "MovieLens" dataset is automatically downloaded and prepared for analysis by splitting it into a training (90% of the data) and a test set (10% of the data). All necessary R packages are downloaded and loaded to execute the analysis.
 
 ```{r, echo = FALSE, message = FALSE, warning = FALSE, eval = TRUE}
 #############################################################
@@ -223,7 +227,7 @@ RMSE <- function(predicted_ratings, true_ratings){
 ### 1. The Simplest Model: Average Movie Rating
 We begin by building a very simple model: We predict a new movie rating to be the average rating of all
 movies in our training dataset `edx`, completely disregarding the user who gives it. This gives us our baseline RMSE to compare future modelling approaches against. We observe that the mean movie rating $\mu$ is a pretty generous > 3.5 stars, quite a bit above the actual average (i.e. 2.5 stars).
-Our simplest model predicts $Y_{u,i}$ as $\mu$ plus the independent errors $\epsilon_{u,i}$, which are sampled from the same distribution and are centered at 0. This very simple model makes the assumption that all differences in movie ratings are explained by random variation alone.
+  Our simplest model predicts $Y_{u,i}$ as $\mu$ plus the independent errors $\epsilon_{u,i}$, which are sampled from the same distribution and are centered at 0. This very simple model makes the assumption that all differences in movie ratings are explained by random variation alone.
 
 
 $$ Y_{u, i} = \mu + \epsilon_{u, i}  $$
@@ -246,7 +250,7 @@ But can we do better than simply predicting the average rating? We will begin by
 
 ### 2. Improving the Simplest Model: Incorporating the "Movie-effect"
 To improve upon the model, we utilize the fact that movies are actually rated differently: Some movies are simply better or more popular than others, which is reflected in their rating being higher or lower than the average movie rating $\mu$.
-We compute the estimated deviation of each movies' mean rating from the total mean of all movies $\mu$.
+  We compute the estimated deviation of each movies' mean rating from the total mean of all movies $\mu$.
 We call the resulting variable "b" (as in "bias") for each movie "i": $\hat{b}_{i}$, which represents the average ranking of movie $i$. We add this term to our model equation from above.
 
 Our model then becomes:
@@ -289,7 +293,7 @@ We can see that the RMSE improves when we take into account that different movie
 Do users rate different movies differently? We compute $b_{u}$, the "User-effect".
 We can see that some users rate movies generally higher/lower than others, while most fall in-between, but also that user rating of movies is generally higher than a 2.5 "true average" rating. This was reflected previously in the high mean rating of > 3.5. We then predict the ratings taking into account movie and user effects together.
 
-```{r, echo = FALSE, fig.height=4, fig.width=5}
+```{r, echo = FALSE, fig.height=3, fig.width=4}
 edx %>% 
   group_by(userId) %>% 
   filter(n() >= 100) %>%
@@ -319,7 +323,7 @@ predicted_ratings <- validation %>%
   .$pred
 
 model_2_RMSE <- RMSE(predicted_ratings, validation$rating)
-rmse_results <- bind_rows(rmse_results, data_frame(method = "Combined Movie & User Effects Model", 
+rmse_results <- bind_rows(rmse_results, data_frame(Method = "Combined Movie & User Effects Model", 
                                                    RMSE = model_2_RMSE))
 print(rmse_results)
 ```
@@ -327,8 +331,7 @@ print(rmse_results)
 
 We can see that including the user-effect $b_{u}$ in our rating predictions further reduced the RMSE.
 It appears that we are still off by ~0.865 stars on average. Are we correctly predicting the best and worst movies with our model? The top ten best and worst movies according to our predictions so far appear to include some "obscure" entries. This might be due to an overall low amount of ratings associated with these movies. We take a look at the amount of ratings given to them.
-
-We look at the top ten best movies according to our predictions so far (largest positive $b_{i}$), as well as at the number of ratings they received.
+  We look at the top ten best movies according to our predictions so far (largest positive $b_{i}$), as well as at the number of ratings they received.
 ```{r, echo = FALSE}
 movie_titles <- edx %>% 
   select(movieId, title) %>%
@@ -357,13 +360,12 @@ edx %>% count(movieId) %>%
   knitr::kable()
 ```
 
-Indeed, some of the best and worst movies we predict were rated sparsely. Larger estimates of $b_{i}$ are likely for movies with very few ratings. The same holds true for the user-effect $b_{u}$, in those cases where users only rated a very small number of movies. 
-We can penalize these by making use of regularization.
-We determine the value `Lambda` that minimizes RMSE, employing 5-way cross-validation. This shrinks the $b_{i}$ and $b_{u}$ in case of small number of ratings. Essentially, by shrinking our estimates when we are rather unsure, we are being more conservative in our estimations.
+Indeed, some of the best and worst movies we predict were rated sparsely. Larger estimates of $b_{i}$ are likely for movies with very few ratings. The same holds true for the user-effect $b_{u}$, in those cases where users only rated a very small number of movies. We can penalize these by making use of regularization.
+  We determine the value `Lambda` that minimizes RMSE, employing 3-way cross-validation. This shrinks the $b_{i}$ and $b_{u}$ in case of small number of ratings. Essentially, by shrinking our estimates when we are rather unsure, we are being more conservative in our estimations.
 
 ```{r, echo = FALSE, results = "hide"}
 set.seed(1)
-splitPlan <- kWayCrossValidation(nRows = nrow(edx), nSplits = 5, NULL, NULL) # We split our training data into k = 5 different train/test sets for cross-validation
+splitPlan <- kWayCrossValidation(nRows = nrow(edx), nSplits = 3, NULL, NULL) # We split our training data into k = 3 different train/test sets for cross-validation
 
 lambdas <- seq(1.5, 3, 0.25) # We define the range of values we test for Lambda. The range has been set as small as possible to reduce computation times.
 opt_lambda <- 0 # We initialize an empty vector that takes the results of the for-loop below
@@ -477,7 +479,7 @@ predicted_ratings <- validation %>%
 
 model_3_RMSE <- RMSE(predicted_ratings, validation$rating)
 rmse_results <- bind_rows(rmse_results,
-                          data_frame(method = "Combined, regularized Movie & User Effect",
+                          data_frame(Method = "Combined, regularized Movie & User Effect",
                                      RMSE = model_3_RMSE))
 rmse_results %>% knitr::kable()
 ```
@@ -509,16 +511,15 @@ edx %>%
   knitr::kable()
 ```
 
-Indeed, the movies we predict to be the best/worst make much more sense now.
+Indeed, the movies we predict to be the best/worst make much more sense now and are based on a larger number of ratings.
 \pagebreak
 
 # Results
 
 ## Accuracy of the Model
 
-While the predicted ratings have the same mean as the original ratings, we observe values below 0.5 and above 5 due to the way we calculated them.
-Furthermore, we predicted numeric values and not categorical ratings from 0.5 to 5.
-```{r, echo = FALSE}
+While the predicted ratings have the same mean as the original ratings, we observe values below 0.5 and above 5 due to the way we calculated them. Furthermore, we predicted numeric values and not categorical ratings from 0.5 to 5.
+```{r, echo = TRUE}
 summary(predicted_ratings)
 
 
@@ -537,7 +538,7 @@ my_prediction[my_prediction >= 5] <- 5 # Substitute all values above 5 with 5
 ```
 
 
-```{r, echo = FALSE}
+```{r, echo = TRUE}
 mean(my_prediction == validation$rating)
 ```
 
@@ -552,7 +553,7 @@ rmse_results %>% knitr::kable()
 ```
 
 
-We arrive at an accuracy of 24.8% and an RMSE of 0.8648490.
+We arrive at an accuracy of 24.8% and an RMSE of 0.8648490 when modelling with the regularized movie and user effects.
 \pagebreak
 
 # Discussion
