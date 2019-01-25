@@ -21,7 +21,7 @@ Movie recommendation systems work by knowing what a user likes (e.g. movie genre
   It is not the purpose of this project to give a "Top 10" best movies to watch recommendation list for a particular user, but instead to make predictions about the star rating users would give to different movies.
 
 
-## Aim of the project
+## Aim of the Project
 The aim of this project is to build a machine learning algorithm that predicts user ratings (from 0.5 to 5 stars) for movies based on the dataset ["MovieLens"](http://files.grouplens.org/datasets/movielens/ml-10m.zip) with 10 million user ratings of over 10500 different movies.
   The algorithm is to be trained on a provided training subset (`edx`) of ["MovieLens"](http://files.grouplens.org/datasets/movielens/ml-10m.zip) and evaluation is to be carried out on the provided testing subset (`validation`).
   The metric used to evaluate algorithm performance is the residual mean squared error, or RMSE. This represents the typical error in star ratings the predicted rating would be off by.
@@ -231,19 +231,37 @@ RMSE <- function(predicted_ratings, true_ratings){
 }
 ```
 
-### 1. The Simplest Model: Average Movie Rating
-We begin by building a very simple model: We predict a new movie rating to be the average rating of all
-movies in our training dataset `edx`, completely disregarding the user who gives it. This gives us our baseline RMSE to compare future modelling approaches against. We observe that the mean movie rating $\mu$ is a pretty generous > 3.5 stars, quite a bit above the actual average (i.e. 2.5 stars).
+### I. The Simplest Model: Average Movie Rating
+After splitting `edx` into training and testing subsets, we begin by building a very simple model: We predict a new movie rating to be the average rating of all movies in our training dataset, completely disregarding the user who gives it. This gives us our baseline RMSE to compare future modelling approaches against. We observe that the mean movie rating $\mu$ is a pretty generous > 3.5 stars, quite a bit above the actual average (i.e. 2.5 stars).
   Our simplest model predicts $Y_{u,i}$ as $\mu$ plus the independent errors $\epsilon_{u,i}$, which are sampled from the same distribution and are centered at 0. This very simple model makes the assumption that all differences in movie ratings are explained by random variation alone.
 
 
 $$ Y_{u, i} = \mu + \epsilon_{u, i}  $$
 
-We create a table to record our approaches and the RMSEs they generate.
+We create a table to record our approaches and the RMSEs they generate. We can see that by predicting a new rating to be the average rating we are typically off by over one star in rating (RMSE > 1.06)!
 
 
 ```{r, echo = FALSE}
-mu <- mean(edx$rating)
+# Before we begin building our model, we split our dataset edx into training and testing subsets.
+set.seed(1)
+test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
+train_set <- edx[-test_index,]
+test <- edx[test_index,]
+
+# We make sure that userId and movieId in our test_set set are also in the train_set and we add the removed movieIds back into the train_set so we can predict against validation later.
+
+test_set <- test %>% 
+  semi_join(train_set, by = "movieId") %>%
+  semi_join(train_set, by = "userId")
+
+
+removed <- test %>% 
+  anti_join(train_set, by = "movieId")
+
+train_set <- rbind(train_set, removed)
+
+# Calculating mu and our baseline RMSE
+mu <- mean(train_set$rating)
 baseline_RMSE <- RMSE(mu, validation$rating)
 #baseline_RMSE
 
@@ -255,7 +273,7 @@ rmse_results %>% knitr::kable()
 But can we do better than simply predicting the average rating? We will begin by incorporating some of the insights we gained during the exploratory data analysis.
 
 
-### 2. Improving the Simplest Model: Incorporating the "Movie-effect"
+### II. Improving the Simplest Model by Incorporating the "Movie-effect"
 To improve upon the model, we utilize the fact that movies are actually rated differently: Some movies are simply better or more popular than others, which is reflected in their rating being higher or lower than the average movie rating $\mu$.
   We compute the estimated deviation of each movies' mean rating from the total mean of all movies $\mu$.
 We call the resulting variable "b" (as in "bias") for each movie "i": $\hat{b}_{i}$, which represents the average ranking of movie $i$. We add this term to our model equation from above.
@@ -265,7 +283,7 @@ Our model then becomes:
 $$ Y_{u, i} = \mu + b_{i} + \epsilon_{u, i}  $$
 
 ```{r, echo = FALSE}
-movie_avgs <- edx %>%
+movie_avgs <- train_set %>%
   group_by(movieId) %>%
   summarize(b_i = mean(rating - mu))
 ```
@@ -283,25 +301,25 @@ We then predict movie ratings based on the fact that different movies are rated 
 
 
 ```{r, echo = FALSE}
-predicted_ratings <- validation %>% 
+predicted_ratings <- test_set %>% 
   left_join(movie_avgs, by = "movieId") %>%
   mutate(pred = mu + b_i) %>%
   .$pred
 
-model_1_RMSE <- RMSE(predicted_ratings, validation$rating)
-rmse_results <- bind_rows(rmse_results, data_frame(Method = "Movie Effect Model", RMSE = model_1_RMSE))
+model_1_RMSE <- RMSE(predicted_ratings, test_set$rating)
+rmse_results <- bind_rows(rmse_results, data_frame(Method = "Movie Effect", RMSE = model_1_RMSE))
 rmse_results %>% knitr::kable()
 ```
 
 We can see that the RMSE improves when we take into account that different movies are rated differently. But this model is still in total disregard of individual user rating patterns. We will use some of the insights gained about user rating distribution to further improve upon our model.
 
 
-### 3. Augmenting the Model with the "User-effect"
+### III. Augmenting the Model with the "User-effect"
 Do users rate different movies differently? We compute $b_{u}$, the "User-effect".
 We can see that some users rate movies generally higher/lower than others, while most fall in-between, but also that user rating of movies is generally higher than a 2.5 "true average" rating. This was reflected previously in the high mean rating of > 3.5. We then predict the ratings taking into account movie and user effects together.
 
 ```{r, echo = FALSE, fig.height=3, fig.width=4}
-edx %>% 
+train_set %>% 
   group_by(userId) %>% 
   filter(n() >= 100) %>%
   summarize(b_u = mean(rating)) %>% 
@@ -320,19 +338,19 @@ $$ Y_{u, i} = \mu + b_{i} + b_{u} + \epsilon_{u, i}  $$
 
 And the corresponding RMSE value:
 ```{r, echo = FALSE}
-user_avgs <- edx %>%
+user_avgs <- train_set %>%
   left_join(movie_avgs, by = "movieId") %>%
   group_by(userId) %>%
   summarize(b_u = mean(rating - mu - b_i))
 
-predicted_ratings <- validation %>%
+predicted_ratings <- test_set %>%
   left_join(movie_avgs, by = "movieId") %>%
   left_join(user_avgs, by = "userId") %>%
   mutate(pred = mu + b_i + b_u) %>%
   .$pred
 
-model_2_RMSE <- RMSE(predicted_ratings, validation$rating)
-rmse_results <- bind_rows(rmse_results, data_frame(Method = "Combined Movie & User Effects Model", 
+model_2_RMSE <- RMSE(predicted_ratings, test_set$rating)
+rmse_results <- bind_rows(rmse_results, data_frame(Method = "Combined Movie & User Effects", 
                                                    RMSE = model_2_RMSE))
 rmse_results %>% knitr::kable()
 ```
@@ -342,13 +360,13 @@ We can see that including the user-effect $b_{u}$ in our rating predictions furt
 It appears that we are still off by ~0.865 stars on average. Are we correctly predicting the best and worst movies with our model? The top ten best and worst movies according to our predictions so far appear to include some "obscure" entries. This might be due to an overall low amount of ratings associated with these movies. We take a look at the amount of ratings given to them.
   We look at the top ten best movies according to our predictions so far (largest positive $b_{i}$), as well as at the number of ratings they received.
 ```{r, echo = FALSE}
-movie_titles <- edx %>% 
+movie_titles <- train_set %>% 
   select(movieId, title) %>%
   distinct()
 
 # Top 10 best movies according to our prediction with the largest positive b_i
 # (movies rated better than average).
-edx %>% count(movieId) %>% 
+train_set %>% count(movieId) %>% 
   left_join(movie_avgs, by = 'movieId') %>%
   left_join(movie_titles, by = "movieId") %>%
   arrange(desc(b_i)) %>% 
@@ -360,7 +378,7 @@ edx %>% count(movieId) %>%
 
 The top ten worst movies according to our predictions so far (largest negative $b_{i}$).
 ```{r, echo = FALSE}
-edx %>% count(movieId) %>% 
+train_set %>% count(movieId) %>% 
   left_join(movie_avgs, by = 'movieId') %>%
   left_join(movie_titles, by = "movieId") %>%
   arrange(b_i) %>% 
@@ -374,7 +392,7 @@ Indeed, some of the best and worst movies we predict were rated sparsely. Larger
 
 ```{r, echo = FALSE, results = "hide"}
 set.seed(1)
-splitPlan <- kWayCrossValidation(nRows = nrow(edx), nSplits = 3, NULL, NULL) # We split our training data into k = 3 different train/test sets for cross-validation
+splitPlan <- kWayCrossValidation(nRows = nrow(train_set), nSplits = 3, NULL, NULL) # We split our training subset into k = 3 different train/test subsets for cross-validation.
 
 lambdas <- seq(1.5, 3, 0.25) # We define the range of values we test for Lambda. The range has been set as small as possible to reduce computation times.
 opt_lambda <- 0 # We initialize an empty vector that takes the results of the for-loop below
@@ -384,34 +402,34 @@ opt_lambda <- 0 # We initialize an empty vector that takes the results of the fo
 
 for (i in 1:length(splitPlan)){
   
-split <- splitPlan[[i]]
-
-rmses <- sapply(lambdas, function(lambda){
+  split <- splitPlan[[i]]
   
-b_i <- edx[split$train, ] %>% 
-  group_by(movieId) %>%
-  summarize(b_i = sum(rating - mu)/(n() + lambda), n_i = n()) # Lambda is used to penalize b_i for small n()
-
-# We generate a temporary test-set out of our training data edx
-# by using the split from kWayCrossValidation. No information from our true validation set is used.
-test_temp <- edx[split$app, ] %>%
-  semi_join(edx[split$train, ], by = "movieId") %>%
-  semi_join(edx[split$train, ], by = "userId")
-
-# Prediction of ratings with temporary test-set
-predicted_ratings <- test_temp %>%
-  left_join(b_i, by = "movieId") %>%
-  mutate(pred = mu + b_i) %>%
-  .$pred
-
-# Calculation of the resulting RMSE with Lambda
-return(RMSE(predicted_ratings, test_temp$rating))
-})
-
-opt_lambda[i] <- lambdas[which.min(rmses)]
-
+  rmses <- sapply(lambdas, function(lambda){
+    
+    b_i <- train_set[split$train, ] %>% 
+      group_by(movieId) %>%
+      summarize(b_i = sum(rating - mu)/(n() + lambda), n_i = n()) # Lambda is used to penalize b_i for small n()
+    
+    # We generate a temporary test-set out of our training data train_set
+    # by using the split from kWayCrosstest_set. No information from our true test_set set is used.
+    test_temp <- train_set[split$app, ] %>%
+      semi_join(train_set[split$train, ], by = "movieId") %>%
+      semi_join(train_set[split$train, ], by = "userId")
+    
+    # Prediction of ratings with temporary test-set
+    predicted_ratings <- test_temp %>%
+      left_join(b_i, by = "movieId") %>%
+      mutate(pred = mu + b_i) %>%
+      .$pred
+    
+    # Calculation of the resulting RMSE with Lambda
+    return(RMSE(predicted_ratings, test_temp$rating))
+  })
+  
+  opt_lambda[i] <- lambdas[which.min(rmses)]
+  
 }
-opt_lambda # All Lambda values from the k = 5 cross validations
+opt_lambda # All Lambda values from the k = 3 cross test_sets
 b_i_opt_lambda <- mean(opt_lambda) # We use the mean as our optimal Lambda value
 ```
 
@@ -420,7 +438,7 @@ We then calculate the regularized movie-effect $b_{i}$ using the optimised `Lamb
 
 
 ```{r, echo = FALSE}
-movie_reg_avgs <- edx %>% 
+movie_reg_avgs <- train_set %>% 
   group_by(movieId) %>% 
   summarize(b_i = sum(rating - mu)/(n() + b_i_opt_lambda), n_i = n()) 
 ```
@@ -440,30 +458,30 @@ opt_lambda <- 0 # Empty vector that takes the output of the for-loop below
 # between 0 and 20 to shorten computation time here.
 for (i in 1:length(splitPlan)){
   
-split <- splitPlan[[i]]
-
-rmses <- sapply(lambdas, function(lambda){
+  split <- splitPlan[[i]]
+  
+  rmses <- sapply(lambdas, function(lambda){
     
-b_u <- edx[split$train, ] %>% 
+    b_u <- train_set[split$train, ] %>% 
       left_join(movie_reg_avgs, by = "movieId") %>%
       group_by(userId) %>%
       summarize(b_u = sum(rating - b_i - mu)/(n() + lambda), n_i = n())
     
-test_temp <- edx[split$app, ] %>%
-      semi_join(edx[split$train, ], by = "movieId") %>%
-      semi_join(edx[split$train, ], by = "userId")
+    test_temp <- train_set[split$app, ] %>%
+      semi_join(train_set[split$train, ], by = "movieId") %>%
+      semi_join(train_set[split$train, ], by = "userId")
     
-predicted_ratings <- test_temp %>%
+    predicted_ratings <- test_temp %>%
       left_join(movie_reg_avgs, by = "movieId") %>%
       left_join(b_u, by = "userId") %>%
       mutate(pred = mu + b_i + b_u) %>%
       .$pred
-
-# Calculation of the resulting RMSE with Lambda
-return(RMSE(predicted_ratings, test_temp$rating))
-})
+    
+    # Calculation of the resulting RMSE with Lambda
+    return(RMSE(predicted_ratings, test_temp$rating))
+  })
   
-opt_lambda[i] <- lambdas[which.min(rmses)]
+  opt_lambda[i] <- lambdas[which.min(rmses)]
   
 }
 opt_lambda
@@ -471,7 +489,7 @@ b_u_opt_lambda <- mean(opt_lambda)
 ```
 
 ```{r, echo = FALSE}
-user_reg_avgs <- edx %>% 
+user_reg_avgs <- train_set %>% 
   left_join(movie_reg_avgs, by = "movieId") %>%
   group_by(userId) %>% 
   summarize(b_u = sum(rating - b_i - mu)/(n() + b_u_opt_lambda), n_i = n()) 
@@ -480,15 +498,15 @@ user_reg_avgs <- edx %>%
 We then predict the ratings with the regularized movie- and user-effects.
 
 ```{r, echo = FALSE}
-predicted_ratings <- validation %>%
+predicted_ratings <- test_set %>%
   left_join(movie_reg_avgs, by = "movieId") %>%
   left_join(user_reg_avgs, by = "userId") %>%
   mutate(pred = mu + b_i + b_u) %>%
   .$pred
 
-model_3_RMSE <- RMSE(predicted_ratings, validation$rating)
+model_3_RMSE <- RMSE(predicted_ratings, test_set$rating)
 rmse_results <- bind_rows(rmse_results,
-                          data_frame(Method = "Combined, regularized Movie & User Effect",
+                          data_frame(Method = "Combined, regularized Movie & User Effects",
                                      RMSE = model_3_RMSE))
 rmse_results %>% knitr::kable()
 ```
@@ -497,7 +515,7 @@ Regularization had little impact on the RMSE, but did it improve the best and wo
 We take a look at the 10 best movies after regularization.
 
 ```{r, echo = FALSE}
-edx %>%
+train_set %>%
   count(movieId) %>% 
   left_join(movie_reg_avgs, by = "movieId") %>%
   left_join(movie_titles, by = "movieId") %>%
@@ -510,7 +528,7 @@ edx %>%
 And at the 10 worst movies after regularization.
 
 ```{r, echo = FALSE}
-edx %>%
+train_set %>%
   count(movieId) %>% 
   left_join(movie_reg_avgs, by = "movieId") %>%
   left_join(movie_titles, by = "movieId") %>%
@@ -521,13 +539,31 @@ edx %>%
 ```
 
 Indeed, the movies we predict to be the best/worst make much more sense now and are based on a larger number of ratings.
+Before the final evaluation, we predict ratings on `validation` and calculate the RMSE of our algorithm on it. We find that our algorithm is doing a little bit worse on `validation` than it did when using it on the `test_set` we had generated from `edx`. 
+
+```{r, echo = FALSE}
+# Please note that the `validation` subset has not been used in any way to generate our algorithm.
+predicted_ratings <- validation %>%
+  left_join(movie_reg_avgs, by = "movieId") %>%
+  left_join(user_reg_avgs, by = "userId") %>%
+  mutate(pred = mu + b_i + b_u) %>%
+  .$pred
+
+model_4_RMSE <- RMSE(predicted_ratings, validation$rating)
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(Method = "Combined regularized Movie & User Effect on `validation`",  
+                                     RMSE = model_4_RMSE))
+rmse_results %>% knitr::kable()
+```
+
+
 \pagebreak
 
 # Results
 
 ## Accuracy of the Model
 
-While the predicted ratings have the same mean as the original ratings, we observe values below 0.5 and above 5 due to the way we calculated them. Furthermore, we predicted numeric values and not categorical ratings from 0.5 to 5.
+While the predicted ratings have a similar mean compared to the original ratings, we observe values below 0.5 and above 5 due to the way we calculated them. Furthermore, we predicted numeric values and not categorical ratings from 0.5 to 5.
 ```{r, echo = TRUE}
 summary(predicted_ratings)
 
@@ -556,24 +592,35 @@ mean(my_prediction == validation$rating)
 Here is our final RMSE value of the predicted ratings without rounding.
 
 ```{r, echo = FALSE}
-RMSE(predicted_ratings, validation$rating)
+RMSE(predicted_ratings, validation$rating) # Accuracy
 ```
 
 ```{r, echo = FALSE}
-knitr::kable(rmse_results)
+knitr::kable(rmse_results) # Final RMSE
 ```
 
-We arrive at an accuracy of 24.8% and an RMSE of 0.8648490 when modelling with the regularized movie and user effects.
+We arrive at an accuracy of almost 24.8% and an RMSE of 0.8648490 when modelling with the regularized movie and user effects.
 \pagebreak
 
 # Discussion
+Equation of the final model:
 
+$$ Y_{u, i} = \mu + b_{i} + b_{u} + \epsilon_{u, i}  $$
 
+The final model presented here performs reasonably well for the average user, that is when a user does not rate a particularly good/popular movie with a large positive $b_{i}$ unexpectedly (outside of his average rating given) low (dislikes a particular movie or genre/actor etc... ). The model is performing well when predicting a "critical" user (negative $b_{u}$) rating a good/popular movie (positive $b_{i}$). However, if a usually "critical" user (negative $b_{u}$) simply loves a particular average movie (neutral $b_{i}$), our prediction will be quite far off (the user might give a 5, but we predict a rating lower than $\mu$ because the movie is just average in terms of its $b_{i}$). Some users simply love every movie they rate, giving a full 5-star rating to every single one, resulting in a large $b_{u}$ in our predictions. Nevertheless, if this user rates below average movies (low or negative $b_{i}$), our prediction might not quite reach the full 5-star rating. Incorporating individual user preferences into the model would most likely lead to large improvements in prediction accuracy.
 
+## Other Approaches
+In the beginning the accuracy metric for this project was set on predicting the correct star ratings between 0.5 and 5 stars. Modelling the movie- and user-effects only returned about 25% accuracy. By making use of the fact that half-star ratings are much less common than full star ratings, one could round to full-star ratings only and forfeit prediction of any half-star ratings. This would bring up the prediction accuray to around 37%.
+Incorporating genres and release year information in analogue fashion to user and movie effects yielded only negligible improvements of RMSE and star rating accuracy and were therefore removed from the modelling process of this report.
+By utilizing the "recommenderlab" package, a user-based collaborative filtering model was built by generating a sparse rating matrix as input. However, once the built model was used to make predictions, RAM became a limiting factor and the predictions could not be finished.
+By utilizing "ff", "ffbase", and "biglm" R-packages, it was attempted to run a linear model, but RAM issues persisted and these models could never be run successfully.
+Principal component analysis (PCA) and singular value decomposition (SVD) were attempted, but failed due to RAM constraints.
 
+As predicting star ratings from 0.5 to 5 can be seen as a classification rather than a regression problem, it was attempted to train different random forrest classifier algorithms on the dataset. However, once again the size of the dataset made running them almost impossible. Almost, because the "ranger" R-package actually successfully trained a random forrest with default parameters (running for many hours). The prediction accuracy was at around 33%, not really improving upon the model from above.
+It was attempted to split the training dataset into many smaller parts, training different algorithms and combining results later, but no such approach yielded appreciable accuracy values.
 
+An approach using naive bayes yielded approximately 34% accuracy when modelling with userId and movieId. Naive bayes assumes independence of the predictors, which in this scenario is not the case. In order to further improve prediction accuracy, it would have been necessary to incorporate user preferences into the equation. Due to any matrix factorization attempts failing, user preference were not successfully modeled and the approach was stopped.
 
 # Conclusion
 
-The ~25% prediction accuracy value of this model can be explained by several facts. User preference for certain types of movies, genres, or even particular actors and directors most likely plays a major role in determining the ratings given. In fact, many modelling approaches in the Netflix challenge incorporated more user information than what was given here and it was found that user profession has a large predictive value. Other possible approaches would include item- and/or user-based collaborative filtering, where the relatively sparse matrix of user ratings (not every user rated every movie in the dataset, in fact far from it) is filled by matching similar user's preferences.
-Whenever a user hates or loves just one or a few particular movies amongst all of his or her ratings, our model may completely miss the mark.
+The ~25% prediction accuracy value of the model presented here can be explained by several facts. User preference for certain types of movies, genres, or even particular actors and directors most likely plays a major role in determining the ratings given. In fact, many modelling approaches in the Netflix challenge incorporated more user information than what was given here and it was found that e.g. user profession has a large predictive value. Other possible approaches would include item- and/or user-based collaborative filtering, to incorporate individual user preferences into the model and thus most likely lead to a large increase in prediction accuracy.
