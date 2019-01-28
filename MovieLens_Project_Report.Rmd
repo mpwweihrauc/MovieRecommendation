@@ -1,7 +1,7 @@
 ---
 title: 'HarvardX: PH125.9x Data Science: Capstone - MovieLens Project'
 author: "Martin Weihrauch"
-date: "January 22, 2019"
+date: "January 28, 2019"
 output:
   pdf_document:
     toc: true
@@ -561,8 +561,6 @@ rmse_results %>% knitr::kable()
 
 # Results
 
-## Accuracy of the Model
-
 While the predicted ratings have a similar mean compared to the original ratings, we observe values below 0.5 and above 5 due to the way we calculated them. Furthermore, we predicted numeric values and not categorical ratings from 0.5 to 5.
 ```{r, echo = TRUE}
 summary(predicted_ratings)
@@ -620,7 +618,16 @@ As predicting star ratings from 0.5 to 5 can be seen as a classification rather 
 It was attempted to split the training dataset into many smaller parts, training different algorithms and combining results later, but no such approach yielded appreciable accuracy values.
 
 An approach using naive bayes yielded approximately 34% accuracy when modelling with userId and movieId. Naive bayes assumes independence of the predictors, which in this scenario is not the case. In order to further improve prediction accuracy, it would have been necessary to incorporate user preferences into the equation. Due to any matrix factorization attempts failing, user preference were not successfully modeled and the approach was stopped.
+\pagebreak
 
 # Conclusion
 
-The ~25% prediction accuracy value of the model presented here can be explained by several facts. User preference for certain types of movies, genres, or even particular actors and directors most likely plays a major role in determining the ratings given. In fact, many modelling approaches in the Netflix challenge incorporated more user information than what was given here and it was found that e.g. user profession has a large predictive value. Other possible approaches would include item- and/or user-based collaborative filtering, to incorporate individual user preferences into the model and thus most likely lead to a large increase in prediction accuracy.
+For this capstone project, we built a regression model to predict movie ratings with the ["MovieLens"](http://files.grouplens.org/datasets/movielens/ml-10m.zip) dataset. The ~25% prediction accuracy value of the model presented here can be explained by several facts. User preference for certain types of movies, genres, or even particular actors and directors most likely plays a major role in determining the ratings given. In fact, many modelling approaches in the Netflix challenge incorporated more user information than what was given here and it was found that e.g. user profession has a large predictive value. Other possible approaches would include item- and/or user-based collaborative filtering, to incorporate individual user preferences into the model and thus most likely lead to a large increase in prediction accuracy.
+
+
+# Acknowledgements
+
+I would like to thank the entire edx course staff for providing a very stimulating learning environment throughout all of the courses and for making these learning materials available and exciting.
+I thank all the active edx forum users for providing help and ample discussion.
+And finally, a big thank you to my peers for spending their time and effort to review my capstone projects.
+Thank you very much, everyone.
