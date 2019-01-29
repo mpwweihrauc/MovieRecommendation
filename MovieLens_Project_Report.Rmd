@@ -1,7 +1,7 @@
 ---
 title: 'HarvardX: PH125.9x Data Science: Capstone - MovieLens Project'
 author: "Martin Weihrauch"
-date: "January 28, 2019"
+date: "January 29, 2019"
 output:
   pdf_document:
     toc: true
@@ -28,7 +28,7 @@ The aim of this project is to build a machine learning algorithm that predicts u
 
 
 ## Dataset Preparation
-The "MovieLens" dataset is automatically downloaded and prepared for analysis by splitting it into a training (90% of the data) and a test set (10% of the data). All necessary R packages are downloaded and loaded to execute the analysis.
+The "MovieLens" dataset is automatically downloaded and prepared for analysis by splitting it into a training (`edx`, 90% of the data) and a test set (`validation`, 10% of the data). All necessary R packages are downloaded and loaded to execute the analysis. Algorithm development is to be carried out on the `edx` subset only, as `validation` will only be used to test the final algorithm. 
 
 ```{r, echo = FALSE, message = FALSE, warning = FALSE, eval = TRUE}
 #############################################################
@@ -86,7 +86,7 @@ rm(dl, ratings, movies, test_index, temp, movielens, removed)
 # Methods and Analysis
 
 ## Exploratory Data Analysis
-As a first step, we want to get familiar with our dataset. A quick glance at the first few entries reveals that each row represents a single rating of a user for a single movie, including the movie title, genre and timestamp at which the rating was given.
+As a first step, we want to get familiar with the dataset. A quick glance at the first few entries reveals that each row represents a single rating of a user for a single movie, including the movie title, genre and timestamp at which the rating was given.
 
 
 ```{r, echo = FALSE}
@@ -95,7 +95,7 @@ head(edx) %>%
 ```
 
 
-A quick summary of the dataset tells us that there are no missing values to deal with.
+A quick summary of the dataset tells us that there are no missing values to deal with (e.g. via a value imputation technique).
 
 
 
