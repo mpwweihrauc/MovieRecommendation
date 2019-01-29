@@ -176,7 +176,7 @@ movie_avgs <- train_set %>%
   summarize(b_i = mean(rating - mu))
 
 # By plotting the computed b_i, we can see that indeed, there are large differences in average movie ratings
-movie_avgs %>% qplot(b_i, geom = "histogram", bins = 10, data = ., color = I("black"), fill = I("orange"))
+movie_avgs %>% qplot(b_i, geom = "histogram", bins = 10, data = ., color = I("black"), fill = I("orange"), ylab = "Number of movies")
 
 # We predict movie ratings based on the fact that different movies are rated differently by adding computed "b_i" to "mu".
 # If an individual movie is on average rated worse than the average rating of all movies "mu",
