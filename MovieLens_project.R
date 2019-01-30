@@ -465,7 +465,7 @@ head(predicted_ratings)
 # values above 5 and below 0.5 accordingly.
 
 my_prediction <- predicted_ratings
-my_prediction <- round(my_prediction/0.5)*0.5
+my_prediction <- round(my_prediction/0.5)*0.5 # Round to half-star ratings
 my_prediction[my_prediction <= 0.5] <- 0.5 # Substitute all values below 0.5 with 0.5
 my_prediction[my_prediction >= 5] <- 5 # Substitute all values above 5 with 5
 
